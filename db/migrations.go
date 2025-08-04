@@ -1,4 +1,4 @@
-package o11y
+package db
 
 import (
 	"context"
@@ -9,6 +9,9 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	migrate "github.com/jackc/tern/v2/migrate"
+	otelTrace "go.opentelemetry.io/otel/trace"
+
+	"github.com/jsnfwlr/o11y/config"
 )
 
 type MigrationFS struct {
@@ -16,7 +19,6 @@ type MigrationFS struct {
 }
 
 func (m MigrationFS) ReadDir(name string) ([]fs.FileInfo, error) {
-	fmt.Printf("Reading directory '%s' from embedded filesystem\n", name)
 	files, err := m.FS.ReadDir(name)
 	if err != nil {
 		return nil, fmt.Errorf("could not get the files from the embedded filesystem: %w", err)
@@ -37,8 +39,6 @@ func (m MigrationFS) ReadDir(name string) ([]fs.FileInfo, error) {
 }
 
 func (m MigrationFS) ReadFile(name string) (contents []byte, fault error) {
-	fmt.Printf("Reading file '%s' from embedded filesystem\n", name)
-
 	b, err := m.FS.ReadFile(name)
 	if err != nil {
 		return nil, fmt.Errorf("could not read file '%s' from embedded filesystem: %w", name, err)
@@ -69,20 +69,21 @@ type DBMigrator struct {
 	context       context.Context
 	connection    *pgx.Conn
 	migrator      *migrate.Migrator
-	configuration Configuration
+	configuration config.Configuration
+	logger        Logger
 }
 
-func NewMigrator(ctx context.Context, connParams Configuration, fs embed.FS) (migrator DBMigrator, fault error) {
+func NewMigrator(ctx context.Context, logger Logger, connParams config.Configuration, fs embed.FS) (migrator DBMigrator, fault error) {
 	conn, err := pgx.Connect(ctx, connParams.DBConStr())
 	if err != nil {
 		return DBMigrator{}, fmt.Errorf("could not connect to database: %w", err)
 	}
 
-	o := &migrate.MigratorOptions{
+	mo := &migrate.MigratorOptions{
 		DisableTx: false,
 	}
 
-	mig, err := migrate.NewMigratorEx(ctx, conn, "db_version", o)
+	mig, err := migrate.NewMigratorEx(ctx, conn, "db_version", mo)
 	if err != nil {
 		return DBMigrator{}, fmt.Errorf("could not create migratorEx %w", err)
 	}
@@ -101,6 +102,7 @@ func NewMigrator(ctx context.Context, connParams Configuration, fs embed.FS) (mi
 		connection:    conn,
 		migrator:      mig,
 		configuration: connParams,
+		logger:        logger,
 	}, nil
 }
 
@@ -205,8 +207,8 @@ func (m *DBMigrator) MigrateTo(sequence int32) (fault error) {
 	return nil
 }
 
-func RunMigrations(ctx context.Context, connParams Configuration, fs embed.FS, stopAfter int32, printSummary bool) (fault error) {
-	m, err := NewMigrator(ctx, connParams, fs)
+func RunMigrations(ctx context.Context, logger Logger, connParams config.Configuration, fs embed.FS, stopAfter int32, printSummary bool) (fault error) {
+	m, err := NewMigrator(ctx, logger, connParams, fs)
 	if err != nil {
 		return fmt.Errorf("could not create migrator: %w", err)
 	}
@@ -243,4 +245,10 @@ func RunMigrations(ctx context.Context, connParams Configuration, fs embed.FS, s
 	}
 
 	return nil
+}
+
+type Logger interface {
+	Debug(msg string, span otelTrace.Span, ephemeralArgs ...any)
+	Info(msg string, span otelTrace.Span, ephemeralArgs ...any)
+	Error(err error, span otelTrace.Span, ephemeralArgs ...any)
 }

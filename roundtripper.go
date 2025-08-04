@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jsnfwlr/o11y/config"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -60,19 +61,19 @@ func (rt RoundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) {
 func LogRoundTripper(next http.RoundTripper) http.RoundTripper {
 	return RoundTripperFunc(func(r *http.Request) (w *http.Response, fault error) {
 		ctx := r.Context()
-		ctx, o := Get(ctx, nil)
+		o := Get(ctx)
 
 		reqBody := []byte{}
 		if r.Body != nil {
 			defer func() {
 				if err := r.Body.Close(); err != nil {
-					o.Error(err)
+					o.Error(err, nil)
 				}
 			}()
 			var err error
 			reqBody, err = io.ReadAll(r.Body)
 			if err != nil {
-				o.Error(err)
+				o.Error(err, nil)
 				return nil, fmt.Errorf("failed to read request body: %w", err)
 			}
 			// Create a new request with the read body
@@ -86,14 +87,14 @@ func LogRoundTripper(next http.RoundTripper) http.RoundTripper {
 			FieldRequestBody, reqBody,
 		}
 
-		o.log(ctx, 8, LevelInfo, "outbound call - request", requestArgs...)
+		o.log(ctx, 8, config.LevelInfo, "outbound call - request", requestArgs...)
 		start := time.Now()
 
 		// Send the actual request
 		resp, err := next.RoundTrip(r)
 		duration := time.Since(start)
 		if err != nil {
-			o.Error(err, FieldCallDuration, duration)
+			o.Error(err, nil, FieldCallDuration, duration)
 			return nil, err
 		}
 
@@ -102,13 +103,13 @@ func LogRoundTripper(next http.RoundTripper) http.RoundTripper {
 		if resp.Body != nil {
 			defer func() {
 				if err = resp.Body.Close(); err != nil {
-					o.Error(err)
+					o.Error(err, nil)
 				}
 			}()
 
 			respBody, err = io.ReadAll(resp.Body)
 			if err != nil {
-				o.Error(err)
+				o.Error(err, nil)
 				return nil, fmt.Errorf("failed to read response body: %w", err)
 			}
 			// Create a new response with the read body
@@ -121,7 +122,7 @@ func LogRoundTripper(next http.RoundTripper) http.RoundTripper {
 			FieldResponseHeaders, RedactHeaders(resp.Header),
 			FieldResponseBody, string(respBody),
 		}
-		o.log(ctx, 8, LevelInfo, "outbound call - response", responseArgs...)
+		o.log(ctx, 8, config.LevelInfo, "outbound call - response", responseArgs...)
 		return resp, nil
 	})
 }
@@ -129,19 +130,19 @@ func LogRoundTripper(next http.RoundTripper) http.RoundTripper {
 func DBStoreRoundTripper(next http.RoundTripper) http.RoundTripper {
 	return RoundTripperFunc(func(r *http.Request) (w *http.Response, fault error) {
 		ctx := r.Context()
-		ctx, o := Get(ctx, nil)
+		o := Get(ctx)
 
 		reqBody := []byte{}
 		if r.Body != nil {
 			defer func() {
 				if err := r.Body.Close(); err != nil {
-					o.Error(err)
+					o.Error(err, nil)
 				}
 			}()
 			var err error
 			reqBody, err = io.ReadAll(r.Body)
 			if err != nil {
-				o.Error(err)
+				o.Error(err, nil)
 				return nil, fmt.Errorf("failed to read request body: %w", err)
 			}
 			// Create a new request with the read body
@@ -153,7 +154,7 @@ func DBStoreRoundTripper(next http.RoundTripper) http.RoundTripper {
 		resp, err := next.RoundTrip(r)
 		duration := time.Since(start)
 		if err != nil {
-			o.Error(err, FieldCallDuration, duration)
+			o.Error(err, nil, FieldCallDuration, duration)
 			return nil, err
 		}
 
@@ -162,13 +163,13 @@ func DBStoreRoundTripper(next http.RoundTripper) http.RoundTripper {
 		if resp.Body != nil {
 			defer func() {
 				if err = resp.Body.Close(); err != nil {
-					o.Error(err)
+					o.Error(err, nil)
 				}
 			}()
 
 			respBody, err = io.ReadAll(resp.Body)
 			if err != nil {
-				o.Error(err)
+				o.Error(err, nil)
 				return nil, fmt.Errorf("failed to read response body: %w", err)
 			}
 			// Create a new response with the read body
@@ -177,7 +178,7 @@ func DBStoreRoundTripper(next http.RoundTripper) http.RoundTripper {
 
 		err = o.store(ctx, r.URL.String(), r.Method, int32(resp.StatusCode), duration, reqBody, respBody, r.Header, resp.Header)
 		if err != nil {
-			o.Error(err, "failed to store API request")
+			o.Error(err, nil, "msg", "failed to store API request")
 			return nil, fmt.Errorf("failed to store API request: %w", err)
 		}
 

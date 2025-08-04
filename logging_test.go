@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jsnfwlr/o11y"
+	"github.com/jsnfwlr/o11y/config"
 )
 
 func TestLoggingContext(t *testing.T) {
@@ -17,7 +18,7 @@ func TestLoggingContext(t *testing.T) {
 
 	buf := new(bytes.Buffer)
 
-	cfg, err := o11y.LoadConfig()
+	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
@@ -30,12 +31,12 @@ func TestLoggingContext(t *testing.T) {
 		o.Close()
 	}()
 
-	o.Fatal(errors.New("TestLoggingContext"), "fatal", 1)
+	o.Fatal(errors.New("TestLoggingContext"), nil, "fatal", 1)
 	ctx, o = o11y.Extend(ctx, nil, "", o11y.FieldRequestID, uuid.New())
-	o.Info("TestLoggingContext", "info", 1)
+	o.Info("TestLoggingContext", nil, "info", 1)
 	ctx = AddFieldsToLoggerInContext(t, ctx, o11y.FieldRequestMethod, "GET", o11y.FieldRequestPath, "/api/v1/test")
-	_, o = o11y.Get(ctx, nil)
-	o.Info("TestLoggingContext", "info", 2)
+	o = o11y.Get(ctx)
+	o.Info("TestLoggingContext", nil, "info", 2)
 
 	// @TODO: read the buffer and check the output matches expected log format
 	// and content
@@ -45,7 +46,7 @@ func AddFieldsToLoggerInContext(t *testing.T, ctx context.Context, args ...any) 
 	// Add fields to the logger in the context
 	c, o := o11y.Extend(ctx, args...)
 
-	o.Info("AddFieldsToLoggerInContext", "info", 1)
+	o.Info("AddFieldsToLoggerInContext", nil, "info", 1)
 
 	return c
 }

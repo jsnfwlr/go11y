@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jsnfwlr/o11y"
+	"github.com/jsnfwlr/o11y/config"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/testcontainers/testcontainers-go"
@@ -30,7 +31,7 @@ func TestRoundtripLogger(t *testing.T) {
 
 	buf := new(bytes.Buffer)
 
-	cfg, err := o11y.LoadConfig()
+	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
@@ -92,7 +93,7 @@ func TestRoundtripStorer(t *testing.T) {
 		}
 	}()
 
-	cfg, err := o11y.LoadConfig()
+	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
@@ -157,7 +158,7 @@ func TestRoundtripperTracer(t *testing.T) {
 
 	time.Sleep(60 * time.Second)
 
-	cfg, err := o11y.LoadConfig()
+	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}

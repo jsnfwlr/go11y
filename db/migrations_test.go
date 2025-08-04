@@ -1,4 +1,4 @@
-package o11y_test
+package db_test
 
 import (
 	"context"
@@ -6,13 +6,15 @@ import (
 	"testing"
 
 	"github.com/jsnfwlr/o11y"
+	"github.com/jsnfwlr/o11y/config"
+	"github.com/jsnfwlr/o11y/db"
 	"github.com/jsnfwlr/o11y/etc/migrations"
 	"github.com/testcontainers/testcontainers-go"
 )
 
 func TestFileSystem(t *testing.T) {
 	fs := migrations.Migrations
-	em := o11y.MigrationFS{FS: fs}
+	em := db.MigrationFS{FS: fs}
 
 	fi, err := em.ReadDir(".")
 	if err != nil {
@@ -54,12 +56,14 @@ func TestMigrator(t *testing.T) {
 	}
 	t.Setenv("DB_CONSTR", dConStr)
 
-	cfg, err := o11y.LoadConfig()
+	cfg, err := config.Load()
 	if err != nil {
 		t.Fatalf("could not load the configuration: %v", err)
 	}
 
-	m, err := o11y.NewMigrator(ctx, cfg, fs)
+	o := o11y.Get(ctx)
+
+	m, err := db.NewMigrator(ctx, o, cfg, fs)
 	if err != nil {
 		t.Fatalf("could not create the migrator: %v", err)
 	}
@@ -71,7 +75,7 @@ func TestMigrator(t *testing.T) {
 
 	t.Logf("host: %s, currentVersion: %d, targetVersion: %d\n%s", i.DBConnStr, i.Migrations.CurrentVersion, i.Migrations.TargetVersion, i.Migrations.Summary)
 
-	err = o11y.RunMigrations(ctx, cfg, fs, -1, true)
+	err = db.RunMigrations(ctx, o, cfg, fs, -1, true)
 	if err != nil {
 		t.Fatalf("could not run the migrations: %v", err)
 	}

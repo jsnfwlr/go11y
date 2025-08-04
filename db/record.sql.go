@@ -3,7 +3,7 @@
 //   sqlc v1.29.0
 // source: record.sql
 
-package o11y
+package db
 
 import (
 	"context"

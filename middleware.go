@@ -50,11 +50,10 @@ func LogRequest(next http.Handler) http.Handler {
 
 		tracer := otel.Tracer(requestID)
 
-		remoteTraceID := r.Header.Get("x-trace-id")
-		remoteSpanID := r.Header.Get("x-span-id")
+		remoteTraceID := r.Header.Get("X-Trace-ID")
+		remoteSpanID := r.Header.Get("X-Span-ID")
 
 		ctx, span := tracer.Start(ctx, "HTTP "+r.Method+" "+r.URL.Path, trace.WithSpanKind(trace.SpanKindServer))
-		defer span.End()
 
 		args := []any{
 			FieldRequestMethod, r.Method,
@@ -70,15 +69,20 @@ func LogRequest(next http.Handler) http.Handler {
 			args = append(args, "remote_span_id", remoteSpanID)
 		}
 
-		ctx, o := Extend(Reset(ctx), args...)
-		r = r.WithContext(ctx)
+		ctx = Reset(ctx)
 
-		o.Debug("request received")
+		ctx, o := Extend(ctx, args...)
+
+		o.Debug("request received", span)
+
+		r = r.WithContext(ctx)
 
 		// Call the next handler
 		next.ServeHTTP(w, r)
 
 		// Log the response
 		// log.Printf("Response sent for: %s %s", r.Method, r.URL.Path)
+		o.Debug("request processed", span)
+		span.End()
 	})
 }

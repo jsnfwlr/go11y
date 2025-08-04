@@ -7,13 +7,13 @@ sql:
     gen:
       go:
         sql_package: "pgx/v5"
-        out: "../"
-        package: "o11y"
+        out: "../db/"
+        package: "db"
         emit_db_tags: true
         emit_json_tags: true
         emit_interface: true
         initialisms: [
-          "ID", 
+          "ID",
           "URL",
         ]
         output_models_file_name: "models.gen.go"
