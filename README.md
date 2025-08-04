@@ -1,4 +1,4 @@
-# o11y<sup>1</sup>
+# o11y<sup>1</sup> for observability
 
 Opinionated but simple Go implementation of structured logging and open telemetry
 tracing for your application.
@@ -71,6 +71,8 @@ o.Info("structured logging", span)
 ## Todo
 
 * Implement integration tests for log ingestion and tracing with Grafana-LGTM testcontainer
+* Expand GoDoc details and add examples
+* Try to get tracing integrated into o11y so there is less boilerplate needed
 
 ## Notes
 <sup>1</sup> sounds like Ollie
