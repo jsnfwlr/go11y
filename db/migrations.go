@@ -11,7 +11,7 @@ import (
 	migrate "github.com/jackc/tern/v2/migrate"
 	otelTrace "go.opentelemetry.io/otel/trace"
 
-	"github.com/jsnfwlr/o11y/config"
+	"github.com/jsnfwlr/go11y/config"
 )
 
 type MigrationFS struct {

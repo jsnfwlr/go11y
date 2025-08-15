@@ -1,4 +1,4 @@
-package o11y
+package go11y
 
 import (
 	"bytes"
@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jsnfwlr/o11y/config"
+	"github.com/jsnfwlr/go11y/config"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 

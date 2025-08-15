@@ -53,7 +53,7 @@ type ObserverDB struct {
 
 type logKey string
 
-var obsKeyInstance logKey = "jsnfwlr/o11y"
+var obsKeyInstance logKey = "jsnfwlr/go11y"
 
 var gObserver *Observer
 
@@ -67,7 +67,7 @@ func options(level slog.Level) *slog.HandlerOptions {
 	return o
 }
 
-func Initialise(ctx context.Context, cfg config.Configuration, logOutput io.Writer, initialArgs ...any) (ctxWithO11y context.Context, observer *Observer, fault error) {
+func Initialise(ctx context.Context, cfg config.Configuration, logOutput io.Writer, initialArgs ...any) (ctxWithgo11y context.Context, observer *Observer, fault error) {
 	if logOutput == nil {
 		logOutput = os.Stdout
 	}
@@ -133,15 +133,15 @@ func Initialise(ctx context.Context, cfg config.Configuration, logOutput io.Writ
 	return ctx, o, nil
 }
 
-func Reset(ctxWithO11y context.Context) (ctxWithResetObservability context.Context) {
+func Reset(ctxWithgo11y context.Context) (ctxWithResetObservability context.Context) {
 	gObserver.logger = slog.New(slog.NewJSONHandler(gObserver.output, options(gObserver.level)))
 	gObserver.Debug("Observer reset", nil)
 	gObserver.stableArgs = []any{}
 
-	return context.WithValue(ctxWithO11y, obsKeyInstance, gObserver)
+	return context.WithValue(ctxWithgo11y, obsKeyInstance, gObserver)
 }
 
-func Extend(ctx context.Context, newArgs ...any) (ctxWithO11y context.Context, observer *Observer) {
+func Extend(ctx context.Context, newArgs ...any) (ctxWithgo11y context.Context, observer *Observer) {
 	o := Get(ctx)
 
 	if len(newArgs) != 0 {

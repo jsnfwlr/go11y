@@ -1,4 +1,4 @@
-package o11y_test
+package go11y_test
 
 func ExampleInitialise_justLogging() {
 	// Example of setting up logging, using the different functions to sending

@@ -5,10 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/jsnfwlr/o11y"
-	"github.com/jsnfwlr/o11y/config"
-	"github.com/jsnfwlr/o11y/db"
-	"github.com/jsnfwlr/o11y/etc/migrations"
+	"github.com/jsnfwlr/go11y"
+	"github.com/jsnfwlr/go11y/config"
+	"github.com/jsnfwlr/go11y/db"
+	"github.com/jsnfwlr/go11y/etc/migrations"
 	"github.com/testcontainers/testcontainers-go"
 )
 
@@ -43,7 +43,7 @@ func TestMigrator(t *testing.T) {
 	fs := migrations.Migrations
 	ctx := context.Background()
 
-	ctr, err := o11y.Postgres(t, ctx)
+	ctr, err := go11y.Postgres(t, ctx)
 	if err != nil {
 		t.Fatalf("could not start Postgres container: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestMigrator(t *testing.T) {
 		t.Fatalf("could not load the configuration: %v", err)
 	}
 
-	o := o11y.Get(ctx)
+	o := go11y.Get(ctx)
 
 	m, err := db.NewMigrator(ctx, o, cfg, fs)
 	if err != nil {

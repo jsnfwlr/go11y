@@ -7,7 +7,7 @@ import (
 	"github.com/caarlos0/env/v10"
 )
 
-// Config is a struct that holds the reference configuration for o11y.
+// Config is a struct that holds the reference configuration for go11y.
 type Config struct {
 	logLevel    slog.Level
 	otelURL     string
@@ -81,7 +81,7 @@ func Load() (cfg *Config, fault error) {
 	return c, nil
 }
 
-// Configuration is an interface that defines the methods required for configuration of o11y.
+// Configuration is an interface that defines the methods required for configuration of go11y.
 // It is used to abstract the configuration details from the observer implementation.
 // This allows for different implementations of configuration, such as loading from environment variables or using a
 // custom configuration struct - ideal for our unit tests or when you want to use a your own bespoke configuration

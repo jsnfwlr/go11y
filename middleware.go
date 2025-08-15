@@ -1,4 +1,4 @@
-package o11y
+package go11y
 
 import (
 	"context"

@@ -1,4 +1,4 @@
-package o11y
+package go11y
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jsnfwlr/o11y/config"
+	"github.com/jsnfwlr/go11y/config"
 
 	"go.opentelemetry.io/otel"
 	otelAttribute "go.opentelemetry.io/otel/attribute"

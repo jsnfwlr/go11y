@@ -1,4 +1,4 @@
-package o11y_test
+package go11y_test
 
 func ExampleSetRequestID() {
 	// Example usage of SetRequestID middleware

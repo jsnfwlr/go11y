@@ -1,9 +1,9 @@
-package o11y
+package go11y
 
 import (
 	"context"
 
-	"github.com/jsnfwlr/o11y/config"
+	"github.com/jsnfwlr/go11y/config"
 	otelTrace "go.opentelemetry.io/otel/trace"
 )
 

@@ -1,4 +1,4 @@
-package o11y_test
+package go11y_test
 
 import (
 	"bytes"
@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jsnfwlr/o11y"
-	"github.com/jsnfwlr/o11y/config"
+	"github.com/jsnfwlr/go11y"
+	"github.com/jsnfwlr/go11y/config"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/testcontainers/testcontainers-go"
@@ -19,7 +19,7 @@ func TestRoundtripLogger(t *testing.T) {
 		Transport: http.DefaultTransport,
 	}
 
-	err := o11y.AddLoggingToHTTPClient(client)
+	err := go11y.AddLoggingToHTTPClient(client)
 	if err != nil {
 		t.Fatalf("failed to add logging to HTTP client: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestRoundtripLogger(t *testing.T) {
 		t.Fatalf("failed to load config: %v", err)
 	}
 
-	ctx, o, err := o11y.Initialise(ctx, cfg, buf)
+	ctx, o, err := go11y.Initialise(ctx, cfg, buf)
 	if err != nil {
 		t.Fatalf("failed to initialise observer: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestRoundtripStorer(t *testing.T) {
 	t.Setenv("LOG_LEVEL", "develop")
 
 	ctx := context.Background()
-	ctr, err := o11y.Postgres(t, ctx)
+	ctr, err := go11y.Postgres(t, ctx)
 	if err != nil {
 		t.Fatalf("failed to start Postgres container: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestRoundtripStorer(t *testing.T) {
 		t.Fatalf("failed to load config: %v", err)
 	}
 
-	_, o, err := o11y.Initialise(ctx, cfg, nil)
+	_, o, err := go11y.Initialise(ctx, cfg, nil)
 	if err != nil {
 		t.Fatalf("failed to initialise observer: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestRoundtripStorer(t *testing.T) {
 		Transport: http.DefaultTransport,
 	}
 
-	err = o11y.AddDBStoreToHTTPClient(client)
+	err = go11y.AddDBStoreToHTTPClient(client)
 	if err != nil {
 		t.Fatalf("failed to add logging to HTTP client: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestRoundtripperTracer(t *testing.T) {
 	t.Setenv("LOG_LEVEL", "develop")
 
 	ctx := context.Background()
-	ctr, err := o11y.LGTM(t, ctx)
+	ctr, err := go11y.LGTM(t, ctx)
 	if err != nil {
 		t.Fatalf("failed to start Grafana LGTM container: %v", err)
 	}
@@ -163,7 +163,7 @@ func TestRoundtripperTracer(t *testing.T) {
 		t.Fatalf("failed to load config: %v", err)
 	}
 
-	_, o, err := o11y.Initialise(ctx, cfg, nil)
+	_, o, err := go11y.Initialise(ctx, cfg, nil)
 	if err != nil {
 		t.Fatalf("failed to initialise observer: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestRoundtripperTracer(t *testing.T) {
 		Transport: http.DefaultTransport,
 	}
 
-	err = o11y.AddTracingToHTTPClient(client)
+	err = go11y.AddTracingToHTTPClient(client)
 	if err != nil {
 		t.Fatalf("failed to add tracing to HTTP client: %v", err)
 	}

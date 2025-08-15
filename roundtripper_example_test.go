@@ -1,4 +1,4 @@
-package o11y_test
+package go11y_test
 
 func ExampleAddTracingToHTTPClient() {
 	// Example usage of AddTracingToHTTPClient function

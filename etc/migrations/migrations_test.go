@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jsnfwlr/o11y/etc/migrations"
+	"github.com/jsnfwlr/go11y/etc/migrations"
 )
 
 func TestValidateMigrations(t *testing.T) {
