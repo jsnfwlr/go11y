@@ -1,6 +1,6 @@
-// Package o11y provides observability features including logging, tracing, and database logging of
+// Package go11y provides observability features including logging, tracing, and database logging of
 // roundtrip requests to third-party APIs.
-package o11y
+package go11y
 
 import (
 	"context"
@@ -13,9 +13,9 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/jsnfwlr/o11y/config"
-	"github.com/jsnfwlr/o11y/db"
-	"github.com/jsnfwlr/o11y/etc/migrations"
+	"github.com/jsnfwlr/go11y/config"
+	"github.com/jsnfwlr/go11y/db"
+	"github.com/jsnfwlr/go11y/etc/migrations"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
