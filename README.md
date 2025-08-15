@@ -1,4 +1,4 @@
-# o11y<sup>1</sup> for observability
+# go11y<sup>1</sup> for observability in Go
 
 Opinionated but simple Go implementation of structured logging and open telemetry
 tracing for your application.
@@ -7,10 +7,10 @@ tracing for your application.
 
 ### Structured Logging
 
-o11y wraps the Go standard lib slog package, so it's structured logging with JSON from the outset, just more convenient.
+go11y wraps the Go standard lib slog package, so it's structured logging with JSON from the outset, just more convenient.
 
 ```go
-_, o, _ := o11y.Initialise(ctx, nil, os.Stdout, "arg1", "val1")
+_, o, _ := go11y.Initialise(ctx, nil, os.Stdout, "arg1", "val1")
 o.Info("structured logging", nil, "arg2", "val2")
 ```
 ```json
@@ -30,11 +30,11 @@ o.Info("structured logging", nil, "arg2", "val2")
 
 ### Tracing
 
-o11y doesn't handle the tracing for you (yet) but it does leave room for it so you don't need to go to too much effort to integrate it.
+go11y doesn't handle the tracing for you (yet) but it does leave room for it so you don't need to go to too much effort to integrate it.
 
 
 ```go
-_, o, _ := o11y.Initialise(ctx, nil, os.Stdout)
+_, o, _ := go11y.Initialise(ctx, nil, os.Stdout)
 
 ctx, span := otel.Tracer("packageName").Start(ctx, "functionName", trace.WithSpanKind(trace.SpanKindClient))
 
@@ -72,7 +72,7 @@ o.Info("structured logging", span)
 
 * Implement integration tests for log ingestion and tracing with Grafana-LGTM testcontainer
 * Expand GoDoc details and add examples
-* Try to get tracing integrated into o11y so there is less boilerplate needed
+* Try to get tracing integrated into go11y so there is less boilerplate needed
 
 ## Notes
-<sup>1</sup> sounds like Ollie
+<sup>1</sup> sounds like golly
