@@ -1,4 +1,4 @@
-module github.com/jsnfwlr/o11y
+module github.com/jsnfwlr/go11y
 
 go 1.24.3
 
