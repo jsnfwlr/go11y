@@ -22,13 +22,13 @@ func (o *Observer) Tracer(name string, opts ...otelTrace.TracerOption) otelTrace
 	return o.traceProvider.Tracer(name, opts...)
 }
 
-func (o *Observer) SpanContext() otelTrace.SpanContext {
-	if o.activeSpan == nil {
-		return otelTrace.SpanContext{}
-	}
+// func (o *Observer) SpanContext() otelTrace.SpanContext {
+// 	if o.activeSpan == nil {
+// 		return otelTrace.SpanContext{}
+// 	}
 
-	return o.activeSpan.SpanContext()
-}
+// 	return o.activeSpan.SpanContext()
+// }
 
 func tracerProvider(ctx context.Context, cfg config.Configuration) (tracerProvider *otelSDKTrace.TracerProvider, fault error) {
 	headers := map[string]string{

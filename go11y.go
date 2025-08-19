@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/jsnfwlr/go11y/config"
@@ -35,14 +36,6 @@ type Observer struct {
 	tracer        otelTrace.Tracer
 	stableArgs    []any
 	db            *ObserverDB
-	activeSpan    otelTrace.Span
-	otherSpans    []SpanTree
-}
-
-type SpanTree struct {
-	Name     string
-	Span     otelTrace.Span
-	Children []SpanTree
 }
 
 type ObserverDB struct {
@@ -51,20 +44,20 @@ type ObserverDB struct {
 	queries *db.Queries
 }
 
-type logKey string
+type go11yContextKey string
 
-var obsKeyInstance logKey = "jsnfwlr/go11y"
+var obsKeyInstance go11yContextKey = "jsnfwlr/go11y"
 
-var gObserver *Observer
+var o *Observer
 
-func options(level slog.Level) *slog.HandlerOptions {
-	o := &slog.HandlerOptions{
+func options(cfg config.Configuration) *slog.HandlerOptions {
+	ho := &slog.HandlerOptions{
 		AddSource:   true,
-		Level:       level,
-		ReplaceAttr: replaceAttr,
+		Level:       cfg.LogLevel(),
+		ReplaceAttr: MakeReplacer(cfg.TrimModules(), cfg.TrimPaths()),
 	}
 
-	return o
+	return ho
 }
 
 func Initialise(ctx context.Context, cfg config.Configuration, logOutput io.Writer, initialArgs ...any) (ctxWithgo11y context.Context, observer *Observer, fault error) {
@@ -86,10 +79,12 @@ func Initialise(ctx context.Context, cfg config.Configuration, logOutput io.Writ
 		return nil, nil, fmt.Errorf("failed to create tracer: %w", err)
 	}
 
-	gObserver = &Observer{
+	opts := options(cfg)
+
+	o = &Observer{
 		cfg:           cfg,
 		output:        logOutput,
-		logger:        slog.New(slog.NewJSONHandler(logOutput, options(cfg.LogLevel()))),
+		logger:        slog.New(slog.NewJSONHandler(logOutput, opts)),
 		traceProvider: tp,
 		stableArgs:    initialArgs,
 	}
@@ -110,9 +105,9 @@ func Initialise(ctx context.Context, cfg config.Configuration, logOutput io.Writ
 
 		odb.queries = db.New(odb.conn)
 
-		gObserver.db = odb
+		o.db = odb
 
-		dbMig, err := db.NewMigrator(ctx, gObserver, cfg, migrations.Migrations)
+		dbMig, err := db.NewMigrator(ctx, o, cfg, migrations.Migrations)
 		if err != nil {
 			return ctx, nil, fmt.Errorf("could not create migrator: %w", err)
 		}
@@ -120,25 +115,27 @@ func Initialise(ctx context.Context, cfg config.Configuration, logOutput io.Writ
 		if err != nil {
 			return ctx, nil, fmt.Errorf("could not migrate database: %w", err)
 		}
-		gObserver.Debug("Database migrated successfully", nil)
+		o.Debug("Database migrated successfully", nil)
 	}
 
-	o := gObserver
+	ctx = context.WithValue(ctx, obsKeyInstance, o)
 	if len(initialArgs) != 0 {
 		ctx, o = Extend(ctx, initialArgs...)
 	}
 
 	slog.SetDefault(o.logger)
 
+	fmt.Println("Initialised observer with context")
+
 	return ctx, o, nil
 }
 
 func Reset(ctxWithgo11y context.Context) (ctxWithResetObservability context.Context) {
-	gObserver.logger = slog.New(slog.NewJSONHandler(gObserver.output, options(gObserver.level)))
-	gObserver.Debug("Observer reset", nil)
-	gObserver.stableArgs = []any{}
+	o.logger = slog.New(slog.NewJSONHandler(o.output, options(o.cfg)))
+	o.Debug("Observer reset", nil)
+	o.stableArgs = []any{}
 
-	return context.WithValue(ctxWithgo11y, obsKeyInstance, gObserver)
+	return context.WithValue(ctxWithgo11y, obsKeyInstance, o)
 }
 
 func Extend(ctx context.Context, newArgs ...any) (ctxWithgo11y context.Context, observer *Observer) {
@@ -153,12 +150,12 @@ func Extend(ctx context.Context, newArgs ...any) (ctxWithgo11y context.Context, 
 }
 
 func Get(ctx context.Context) (observer *Observer) {
-	o := gObserver
-
 	ob := ctx.Value(obsKeyInstance)
-	if ob != nil {
-		o = ob.(*Observer)
+	if ob == nil {
+		return o
 	}
+
+	o := ob.(*Observer)
 
 	return o
 }
@@ -169,39 +166,61 @@ func (o *Observer) Close() {
 	}
 }
 
-func replaceAttr(groups []string, a slog.Attr) slog.Attr {
-	if os.Getenv("ENV") == "test" && a.Key == slog.TimeKey {
-		return slog.Attr{} // remove time key in test to make it easier to compare
-	}
-
-	if a.Key == slog.LevelKey {
-		var level slog.Level
-
-		if lvl, ok := a.Value.Any().(slog.Level); ok {
-			level = lvl
-		} else {
-			level = config.StringToLevel(fmt.Sprintf("%v", a.Value.Any()))
+func MakeReplacer(trimModules, trimPaths []string) func(groups []string, a slog.Attr) slog.Attr {
+	return func(groups []string, a slog.Attr) slog.Attr {
+		if os.Getenv("ENV") == "test" && a.Key == slog.TimeKey {
+			return slog.Attr{} // remove time key in test to make it easier to compare
 		}
 
-		switch level {
-		case config.LevelDebug:
-			a.Value = slog.StringValue("DEBUG")
-		case config.LevelInfo:
-			a.Value = slog.StringValue("INFO")
-		case config.LevelNotice:
-			a.Value = slog.StringValue("NOTICE")
-		case config.LevelWarning:
-			a.Value = slog.StringValue("WARN")
-		case config.LevelError:
-			a.Value = slog.StringValue("ERR")
-		case config.LevelFatal:
-			a.Value = slog.StringValue("FATAL")
-		default:
-			a.Value = slog.StringValue("DEBUG")
-		}
-	}
+		switch a.Key {
+		case slog.SourceKey:
+			source, ok := a.Value.Any().(*slog.Source)
+			if !ok {
+				return a
+			}
 
-	return a
+			for _, path := range trimPaths {
+				if idx := strings.Index(source.File, path); idx != -1 {
+					source.File = source.File[idx+len(path):]
+				}
+			}
+
+			for _, module := range trimModules {
+				if idx := strings.Index(source.Function, module); idx != -1 {
+					source.Function = source.Function[idx+len(module):]
+				}
+			}
+
+			return slog.Any(a.Key, source)
+		case slog.LevelKey:
+			var level slog.Level
+
+			if lvl, ok := a.Value.Any().(slog.Level); ok {
+				level = lvl
+			} else {
+				level = config.StringToLevel(fmt.Sprintf("%v", a.Value.Any()))
+			}
+
+			switch level {
+			case config.LevelDebug:
+				a.Value = slog.StringValue("DEBUG")
+			case config.LevelInfo:
+				a.Value = slog.StringValue("INFO")
+			case config.LevelNotice:
+				a.Value = slog.StringValue("NOTICE")
+			case config.LevelWarning:
+				a.Value = slog.StringValue("WARN")
+			case config.LevelError:
+				a.Value = slog.StringValue("ERR")
+			case config.LevelFatal:
+				a.Value = slog.StringValue("FATAL")
+			default:
+				a.Value = slog.StringValue("DEBUG")
+			}
+		}
+
+		return a
+	}
 }
 
 func (o *Observer) log(ctx context.Context, skipCallers int, level slog.Level, msg string, args ...any) {
