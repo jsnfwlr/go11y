@@ -23,6 +23,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	otelSDKTrace "go.opentelemetry.io/otel/sdk/trace"
 	otelTrace "go.opentelemetry.io/otel/trace"
+	_ "google.golang.org/genproto/googleapis/api/httpbody"
+	_ "google.golang.org/genproto/googleapis/rpc/status"
 )
 
 type Fields map[string]any

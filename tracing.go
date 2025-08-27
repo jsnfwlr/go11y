@@ -3,6 +3,7 @@ package go11y
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -77,12 +78,44 @@ func argsToAttributes(combinedArgs ...any) []otelAttribute.KeyValue {
 		return nil
 	}
 
+	dropKeys := []string{
+		FieldSpanID,
+		FieldTraceID,
+	}
 	attrs := make([]otelAttribute.KeyValue, 0, len(combinedArgs)/2)
 	for i := 0; i < len(combinedArgs); i += 2 {
 		if i+1 < len(combinedArgs) {
 			key := fmt.Sprintf("%v", combinedArgs[i])
-			value := fmt.Sprintf("%v", combinedArgs[i+1])
-			attrs = append(attrs, otelAttribute.String(key, value))
+
+			if !slices.Contains(dropKeys, key) {
+				switch V := combinedArgs[i+1].(type) {
+				case int, int8, int16, int32, uint, uint8, uint16, uint32:
+					attrs = append(attrs, otelAttribute.Int(key, V.(int)))
+				case int64, uint64:
+					attrs = append(attrs, otelAttribute.Int64(key, V.(int64)))
+				case float32:
+					attrs = append(attrs, otelAttribute.Float64(key, float64(V)))
+				case float64:
+					attrs = append(attrs, otelAttribute.Float64(key, V))
+				case bool:
+					attrs = append(attrs, otelAttribute.Bool(key, V))
+				case string:
+					attrs = append(attrs, otelAttribute.String(key, V))
+				case []string:
+					attrs = append(attrs, otelAttribute.StringSlice(key, V))
+				case []int:
+					attrs = append(attrs, otelAttribute.IntSlice(key, V))
+				case []int64:
+					attrs = append(attrs, otelAttribute.Int64Slice(key, V))
+				case []float64:
+					attrs = append(attrs, otelAttribute.Float64Slice(key, V))
+				case []bool:
+					attrs = append(attrs, otelAttribute.BoolSlice(key, V))
+				default:
+					value := fmt.Sprintf("%v", V)
+					attrs = append(attrs, otelAttribute.String(key, value))
+				}
+			}
 		} else {
 			// If there's an odd number of arguments, the last one is ignored
 			break

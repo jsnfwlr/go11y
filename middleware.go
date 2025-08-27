@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/uuid"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -41,35 +42,50 @@ func SetRequestID(next http.Handler) http.Handler {
 	})
 }
 
+type Origin struct {
+	ClientIP  string `json:"client_ip"`
+	UserAgent string `json:"user_agent"`
+	Method    string `json:"method"`
+	Path      string `json:"path"`
+}
+
+// LogRequest is a middleware that logs incoming HTTP requests and their details
+// It extracts tracing information from the request headers and starts a new span for the request
+// It also logs the request details using go11y, adding the go11y Observer to the request context in the process
 func LogRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Log the request
-		ctx := r.Context()
+		// Log&Trace the request
+		prop := otel.GetTextMapPropagator()
+
+		ctx := prop.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 
 		requestID := GetRequestID(ctx)
 
 		tracer := otel.Tracer(requestID)
 
-		remoteTraceID := r.Header.Get("X-Trace-ID")
-		remoteSpanID := r.Header.Get("X-Span-ID")
-
-		ctx, span := tracer.Start(ctx, "HTTP "+r.Method+" "+r.URL.Path, trace.WithSpanKind(trace.SpanKindServer))
+		ctx = Reset(ctx)
 
 		args := []any{
-			FieldRequestMethod, r.Method,
-			FieldRequestPath, r.URL.Path,
-			FieldRequestID, requestID,
-			FieldSpanID, span.SpanContext().SpanID(),
-			FieldTraceID, span.SpanContext().TraceID(),
-		}
-		if remoteTraceID != "" {
-			args = append(args, "remote_trace_id", remoteTraceID)
-		}
-		if remoteSpanID != "" {
-			args = append(args, "remote_span_id", remoteSpanID)
+			"origin", Origin{
+				ClientIP:  r.RemoteAddr,
+				UserAgent: r.UserAgent(),
+				Method:    r.Method,
+				Path:      r.URL.Path,
+			},
 		}
 
-		ctx = Reset(ctx)
+		// tracer
+		opts := []trace.SpanStartOption{
+			trace.WithSpanKind(trace.SpanKindServer),
+			trace.WithAttributes(argsToAttributes(args...)...),
+		}
+
+		ctx, span := tracer.Start(ctx, "HTTP "+r.Method+" "+r.URL.Path, opts...)
+
+		args = append(args,
+			FieldSpanID, span.SpanContext().SpanID(),
+			FieldTraceID, span.SpanContext().TraceID(),
+		)
 
 		ctx, o := Extend(ctx, args...)
 

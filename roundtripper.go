@@ -10,6 +10,8 @@ import (
 
 	"github.com/jsnfwlr/go11y/config"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 )
 
 // AddTracingToHTTPClient wraps a HTTP client's transporter with OpenTelemetry instrumentation
@@ -26,6 +28,16 @@ func AddTracingToHTTPClient(httpClient *http.Client) (fault error) {
 
 	// Wrap the existing transport with OpenTelemetry tracing
 	httpClient.Transport = otelhttp.NewTransport(httpClient.Transport)
+	return nil
+}
+
+func AddPropagationToHTTPClient(httpClient *http.Client) (fault error) {
+	if httpClient == nil {
+		return errors.New("httpClient cannot be nil")
+	}
+
+	// Wrap the existing transport with OpenTelemetry tracing
+	httpClient.Transport = PropagateRoundTripper(httpClient.Transport)
 	return nil
 }
 
@@ -196,4 +208,14 @@ func RedactHeaders(headers http.Header) http.Header {
 		}
 	}
 	return redactedHeaders
+}
+
+func PropagateRoundTripper(next http.RoundTripper) http.RoundTripper {
+	return RoundTripperFunc(func(r *http.Request) (w *http.Response, fault error) {
+		ctx := r.Context()
+
+		otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(r.Header))
+
+		return next.RoundTrip(r)
+	})
 }
