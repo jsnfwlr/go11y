@@ -61,7 +61,7 @@ func TestMigrator(t *testing.T) {
 		t.Fatalf("could not load the configuration: %v", err)
 	}
 
-	o := go11y.Get(ctx)
+	ctx, o := go11y.Get(ctx)
 
 	m, err := db.NewMigrator(ctx, o, cfg, fs)
 	if err != nil {

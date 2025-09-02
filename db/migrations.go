@@ -9,7 +9,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	migrate "github.com/jackc/tern/v2/migrate"
-	otelTrace "go.opentelemetry.io/otel/trace"
 
 	"github.com/jsnfwlr/go11y/config"
 )
@@ -248,7 +247,7 @@ func RunMigrations(ctx context.Context, logger Logger, connParams config.Configu
 }
 
 type Logger interface {
-	Debug(msg string, span otelTrace.Span, ephemeralArgs ...any)
-	Info(msg string, span otelTrace.Span, ephemeralArgs ...any)
-	Error(err error, span otelTrace.Span, ephemeralArgs ...any)
+	Debug(msg string, ephemeralArgs ...any)
+	Info(msg string, ephemeralArgs ...any)
+	Error(err error, ephemeralArgs ...any)
 }

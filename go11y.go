@@ -38,6 +38,8 @@ type Observer struct {
 	tracer        otelTrace.Tracer
 	stableArgs    []any
 	db            *ObserverDB
+	span          otelTrace.Span
+	spans         []otelTrace.Span
 }
 
 type ObserverDB struct {
@@ -50,7 +52,7 @@ type go11yContextKey string
 
 var obsKeyInstance go11yContextKey = "jsnfwlr/go11y"
 
-var o *Observer
+var og *Observer
 
 func options(cfg config.Configuration) *slog.HandlerOptions {
 	ho := &slog.HandlerOptions{
@@ -62,7 +64,7 @@ func options(cfg config.Configuration) *slog.HandlerOptions {
 	return ho
 }
 
-func Initialise(ctx context.Context, cfg config.Configuration, logOutput io.Writer, initialArgs ...any) (ctxWithgo11y context.Context, observer *Observer, fault error) {
+func Initialise(ctx context.Context, cfg config.Configuration, logOutput io.Writer, initialArgs ...any) (ctxWithGo11y context.Context, observer *Observer, fault error) {
 	if logOutput == nil {
 		logOutput = os.Stdout
 	}
@@ -83,7 +85,7 @@ func Initialise(ctx context.Context, cfg config.Configuration, logOutput io.Writ
 
 	opts := options(cfg)
 
-	o = &Observer{
+	og = &Observer{
 		cfg:           cfg,
 		output:        logOutput,
 		logger:        slog.New(slog.NewJSONHandler(logOutput, opts)),
@@ -107,9 +109,9 @@ func Initialise(ctx context.Context, cfg config.Configuration, logOutput io.Writ
 
 		odb.queries = db.New(odb.conn)
 
-		o.db = odb
+		og.db = odb
 
-		dbMig, err := db.NewMigrator(ctx, o, cfg, migrations.Migrations)
+		dbMig, err := db.NewMigrator(ctx, og, cfg, migrations.Migrations)
 		if err != nil {
 			return ctx, nil, fmt.Errorf("could not create migrator: %w", err)
 		}
@@ -117,31 +119,33 @@ func Initialise(ctx context.Context, cfg config.Configuration, logOutput io.Writ
 		if err != nil {
 			return ctx, nil, fmt.Errorf("could not migrate database: %w", err)
 		}
-		o.Debug("Database migrated successfully", nil)
+		og.Debug("Database migrated successfully", nil)
 	}
 
-	ctx = context.WithValue(ctx, obsKeyInstance, o)
+	ctx = context.WithValue(ctx, obsKeyInstance, og)
 	if len(initialArgs) != 0 {
-		ctx, o = Extend(ctx, initialArgs...)
+		ctx, og = Extend(ctx, initialArgs...)
 	}
 
-	slog.SetDefault(o.logger)
+	slog.SetDefault(og.logger)
 
 	fmt.Println("Initialised observer with context")
 
-	return ctx, o, nil
+	return ctx, og, nil
 }
 
-func Reset(ctxWithgo11y context.Context) (ctxWithResetObservability context.Context) {
-	o.logger = slog.New(slog.NewJSONHandler(o.output, options(o.cfg)))
-	o.Debug("Observer reset", nil)
-	o.stableArgs = []any{}
+func Reset(ctxWithGo11y context.Context) (ctxWithResetObservability context.Context) {
+	og.logger = slog.New(slog.NewJSONHandler(og.output, options(og.cfg)))
+	og.Debug("Observer reset", nil)
+	og.stableArgs = []any{}
 
-	return context.WithValue(ctxWithgo11y, obsKeyInstance, o)
+	return context.WithValue(ctxWithGo11y, obsKeyInstance, og)
 }
 
-func Extend(ctx context.Context, newArgs ...any) (ctxWithgo11y context.Context, observer *Observer) {
-	o := Get(ctx)
+// Extend retrieves the Observer from the context and adds new arguments to its logger.
+// If no Observer exists in the context, it initializes a new one with default settings and adds the arguments.
+func Extend(ctx context.Context, newArgs ...any) (ctxWithGo11y context.Context, observer *Observer) {
+	ctx, o := Get(ctx)
 
 	if len(newArgs) != 0 {
 		o.logger = o.logger.With(newArgs...)
@@ -151,18 +155,52 @@ func Extend(ctx context.Context, newArgs ...any) (ctxWithgo11y context.Context, 
 	return context.WithValue(ctx, obsKeyInstance, o), o
 }
 
-func Get(ctx context.Context) (observer *Observer) {
+func Expand(ctx context.Context, tracer otelTrace.Tracer, spanName string, spanKind otelTrace.SpanKind, newArgs ...any) (ctxWithSpan context.Context, observer *Observer) {
+	ctx, o := Span(ctx, tracer, spanName, spanKind)
+
+	if len(newArgs) != 0 {
+		o.logger = o.logger.With(newArgs...)
+		o.stableArgs = o.AddArgs(newArgs...)
+	}
+
+	return context.WithValue(ctx, obsKeyInstance, o), o
+}
+
+// Get retrieves the Observer from the context. If none exists, it initializes a new one with default settings.
+func Get(ctx context.Context) (ctxWithObserver context.Context, observer *Observer) {
 	ob := ctx.Value(obsKeyInstance)
 	if ob == nil {
-		return o
+		return context.WithValue(ctx, obsKeyInstance, og), og
 	}
 
 	o := ob.(*Observer)
 
-	return o
+	return ctx, o
+}
+
+// Span gets the Observer from the context and starts a new tracing span with the given name.
+// If no Observer exists in the context, it initializes a new one with default settings and starts the span.
+// The tracing equivalent of Get()
+func Span(ctx context.Context, tracer otelTrace.Tracer, spanName string, spanKind otelTrace.SpanKind) (ctxWithSpan context.Context, observer *Observer) {
+	ctx, o := Get(ctx)
+
+	ctx, span := tracer.Start(ctx, spanName, otelTrace.WithSpanKind(spanKind))
+
+	o.span = span
+	o.spans = append(o.spans, span)
+
+	return context.WithValue(ctx, obsKeyInstance, o), o
 }
 
 func (o *Observer) Close() {
+	if o.span != nil {
+		o.span.End()
+
+		for _, s := range o.spans {
+			s.End()
+		}
+	}
+
 	if err := o.traceProvider.Shutdown(context.Background()); err != nil {
 		o.Fatal(err, nil)
 	}
@@ -338,4 +376,15 @@ func processArgs(exArgs map[any]any, args []any) (map[any]any, []any) {
 }
 
 func (o *Observer) Mute(ctx context.Context) {
+}
+
+func (o *Observer) End() {
+	o.span.End()
+
+	o.spans = o.spans[:len(o.spans)-1]
+	if len(o.spans) > 0 {
+		o.span = o.spans[len(o.spans)-1]
+	} else {
+		o.span = nil
+	}
 }
