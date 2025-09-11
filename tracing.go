@@ -89,10 +89,10 @@ func argsToAttributes(combinedArgs ...any) []otelAttribute.KeyValue {
 
 			if !slices.Contains(dropKeys, key) {
 				switch V := combinedArgs[i+1].(type) {
-				case int, int8, int16, int32, uint, uint8, uint16, uint32:
-					attrs = append(attrs, otelAttribute.Int(key, V.(int)))
-				case int64, uint64:
-					attrs = append(attrs, otelAttribute.Int64(key, V.(int64)))
+				case int:
+					attrs = append(attrs, otelAttribute.Int(key, V))
+				case int64:
+					attrs = append(attrs, otelAttribute.Int64(key, V))
 				case float32:
 					attrs = append(attrs, otelAttribute.Float64(key, float64(V)))
 				case float64:

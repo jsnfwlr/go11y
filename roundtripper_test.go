@@ -85,7 +85,7 @@ func TestRoundtripStorer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to start Postgres container: %v", err)
 	}
-	testcontainers.CleanupContainer(t, ctr)
+	defer testcontainers.CleanupContainer(t, ctr)
 
 	defer func() {
 		if err := testcontainers.TerminateContainer(ctr); err != nil {

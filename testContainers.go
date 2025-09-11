@@ -32,7 +32,7 @@ func Postgres(t *testing.T, ctx context.Context) (ctr *postgres.PostgresContaine
 		return nil, err
 	}
 
-	dConStr, err := ctr.ConnectionString(ctx, "sslmode=disable")
+	dConStr, err := c.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
 		t.Fatalf("failed to get connection string: %v", err)
 		return nil, err
