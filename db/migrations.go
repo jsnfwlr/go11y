@@ -249,5 +249,5 @@ func RunMigrations(ctx context.Context, logger Logger, connParams config.Configu
 type Logger interface {
 	Debug(msg string, ephemeralArgs ...any)
 	Info(msg string, ephemeralArgs ...any)
-	Error(err error, ephemeralArgs ...any)
+	Error(msg string, err error, severity config.Severity, ephemeralArgs ...any)
 }

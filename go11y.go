@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jsnfwlr/go11y/config"
+	. "github.com/jsnfwlr/go11y/config"
 	"github.com/jsnfwlr/go11y/db"
 	"github.com/jsnfwlr/go11y/etc/migrations"
 
@@ -30,7 +30,7 @@ import (
 type Fields map[string]any
 
 type Observer struct {
-	cfg           config.Configuration
+	cfg           Configuration
 	output        io.Writer
 	level         slog.Level
 	logger        *slog.Logger
@@ -54,7 +54,7 @@ var obsKeyInstance go11yContextKey = "jsnfwlr/go11y"
 
 var og *Observer
 
-func options(cfg config.Configuration) *slog.HandlerOptions {
+func options(cfg Configuration) *slog.HandlerOptions {
 	ho := &slog.HandlerOptions{
 		AddSource:   true,
 		Level:       cfg.LogLevel(),
@@ -64,7 +64,7 @@ func options(cfg config.Configuration) *slog.HandlerOptions {
 	return ho
 }
 
-func Initialise(ctx context.Context, cfg config.Configuration, logOutput io.Writer, initialArgs ...any) (ctxWithGo11y context.Context, observer *Observer, fault error) {
+func Initialise(ctx context.Context, cfg Configuration, logOutput io.Writer, initialArgs ...any) (ctxWithGo11y context.Context, observer *Observer, fault error) {
 	if logOutput == nil {
 		logOutput = os.Stdout
 	}
@@ -72,7 +72,7 @@ func Initialise(ctx context.Context, cfg config.Configuration, logOutput io.Writ
 	var err error
 
 	if cfg == nil {
-		cfg, err = config.Load()
+		cfg, err = Load()
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to load configuration: %w", err)
 		}
@@ -202,7 +202,7 @@ func (o *Observer) Close() {
 	}
 
 	if err := o.traceProvider.Shutdown(context.Background()); err != nil {
-		o.Fatal(err, nil)
+		o.Fatal("could not shut down tracer", err, nil)
 	}
 }
 
@@ -238,21 +238,21 @@ func MakeReplacer(trimModules, trimPaths []string) func(groups []string, a slog.
 			if lvl, ok := a.Value.Any().(slog.Level); ok {
 				level = lvl
 			} else {
-				level = config.StringToLevel(fmt.Sprintf("%v", a.Value.Any()))
+				level = StringToLevel(fmt.Sprintf("%v", a.Value.Any()))
 			}
 
 			switch level {
-			case config.LevelDebug:
+			case LevelDebug:
 				a.Value = slog.StringValue("DEBUG")
-			case config.LevelInfo:
+			case LevelInfo:
 				a.Value = slog.StringValue("INFO")
-			case config.LevelNotice:
+			case LevelNotice:
 				a.Value = slog.StringValue("NOTICE")
-			case config.LevelWarning:
+			case LevelWarning:
 				a.Value = slog.StringValue("WARN")
-			case config.LevelError:
+			case LevelError:
 				a.Value = slog.StringValue("ERR")
-			case config.LevelFatal:
+			case LevelFatal:
 				a.Value = slog.StringValue("FATAL")
 			default:
 				a.Value = slog.StringValue("DEBUG")
@@ -293,13 +293,13 @@ func (o *Observer) store(ctx context.Context, url, method string, statusCode int
 
 	reqHead, err := json.Marshal(requestHeaders)
 	if err != nil {
-		o.Error(err, nil, "msg", "Failed to marshal request headers to JSON")
+		o.Error("Failed to marshal request headers to JSON", err, SeverityMedium, nil)
 		return err
 	}
 
 	respHead, err := json.Marshal(responseHeaders)
 	if err != nil {
-		o.Error(err, nil, "msg", "Failed to marshal response headers to JSON")
+		o.Error("Failed to marshal response headers to JSON", err, SeverityMedium, nil)
 		return err
 	}
 
@@ -327,7 +327,7 @@ func (o *Observer) store(ctx context.Context, url, method string, statusCode int
 
 	// Store the entry in the database
 	if err := o.db.queries.StoreAPIRequest(ctx, entry); err != nil {
-		o.Error(err, nil, "msg", "Failed to store entry in database")
+		o.Error("Failed to store entry in database", err, SeverityMedium, nil)
 		return err
 	}
 

@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/jsnfwlr/go11y/config"
+	. "github.com/jsnfwlr/go11y/config"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -77,14 +77,11 @@ func LogRoundTripper(next http.RoundTripper) http.RoundTripper {
 		reqBody := []byte{}
 		if r.Body != nil {
 			defer func() {
-				if err := r.Body.Close(); err != nil {
-					o.Error(err, nil)
-				}
+				_ = r.Body.Close()
 			}()
 			var err error
 			reqBody, err = io.ReadAll(r.Body)
 			if err != nil {
-				o.Error(err, nil)
 				return nil, fmt.Errorf("failed to read request body: %w", err)
 			}
 			// Create a new request with the read body
@@ -98,14 +95,12 @@ func LogRoundTripper(next http.RoundTripper) http.RoundTripper {
 			FieldRequestBody, reqBody,
 		}
 
-		o.log(ctx, 8, config.LevelInfo, "outbound call - request", requestArgs...)
+		o.log(ctx, 8, LevelInfo, "outbound call - request", requestArgs...)
 		start := time.Now()
 
 		// Send the actual request
 		resp, err := next.RoundTrip(r)
-		duration := time.Since(start)
 		if err != nil {
-			o.Error(err, nil, FieldCallDuration, duration)
 			return nil, err
 		}
 
@@ -113,19 +108,18 @@ func LogRoundTripper(next http.RoundTripper) http.RoundTripper {
 		// read the response body, use it to log the response body, then build a new response to return
 		if resp.Body != nil {
 			defer func() {
-				if err = resp.Body.Close(); err != nil {
-					o.Error(err, nil)
-				}
+				_ = resp.Body.Close()
 			}()
 
 			respBody, err = io.ReadAll(resp.Body)
 			if err != nil {
-				o.Error(err, nil)
 				return nil, fmt.Errorf("failed to read response body: %w", err)
 			}
 			// Create a new response with the read body
 			resp.Body = io.NopCloser(bytes.NewBuffer(respBody)) // Use NopCloser to allow reading the body again if needed
 		}
+
+		duration := time.Since(start)
 
 		responseArgs := []any{
 			FieldCallDuration, duration,
@@ -133,7 +127,7 @@ func LogRoundTripper(next http.RoundTripper) http.RoundTripper {
 			FieldResponseHeaders, RedactHeaders(resp.Header),
 			FieldResponseBody, string(respBody),
 		}
-		o.log(ctx, 8, config.LevelInfo, "outbound call - response", responseArgs...)
+		o.log(ctx, 8, LevelInfo, "outbound call - response", responseArgs...)
 		return resp, nil
 	})
 }
@@ -145,14 +139,11 @@ func DBStoreRoundTripper(next http.RoundTripper) http.RoundTripper {
 		reqBody := []byte{}
 		if r.Body != nil {
 			defer func() {
-				if err := r.Body.Close(); err != nil {
-					o.Error(err, nil)
-				}
+				_ = r.Body.Close()
 			}()
 			var err error
 			reqBody, err = io.ReadAll(r.Body)
 			if err != nil {
-				o.Error(err, nil)
 				return nil, fmt.Errorf("failed to read request body: %w", err)
 			}
 			// Create a new request with the read body
@@ -162,9 +153,7 @@ func DBStoreRoundTripper(next http.RoundTripper) http.RoundTripper {
 		start := time.Now()
 
 		resp, err := next.RoundTrip(r)
-		duration := time.Since(start)
 		if err != nil {
-			o.Error(err, nil, FieldCallDuration, duration)
 			return nil, err
 		}
 
@@ -172,23 +161,20 @@ func DBStoreRoundTripper(next http.RoundTripper) http.RoundTripper {
 		// read the response body, use it to log the response body, then build a new response to return
 		if resp.Body != nil {
 			defer func() {
-				if err = resp.Body.Close(); err != nil {
-					o.Error(err, nil)
-				}
+				_ = resp.Body.Close()
 			}()
 
 			respBody, err = io.ReadAll(resp.Body)
 			if err != nil {
-				o.Error(err, nil)
 				return nil, fmt.Errorf("failed to read response body: %w", err)
 			}
 			// Create a new response with the read body
 			resp.Body = io.NopCloser(bytes.NewBuffer(respBody)) // Use NopCloser to allow reading the body again if needed
 		}
 
+		duration := time.Since(start)
 		err = o.store(ctx, r.URL.String(), r.Method, int32(resp.StatusCode), duration, reqBody, respBody, r.Header, resp.Header)
 		if err != nil {
-			o.Error(err, nil, "msg", "failed to store API request")
 			return nil, fmt.Errorf("failed to store API request: %w", err)
 		}
 

@@ -66,7 +66,7 @@ func (o *Observer) Warn(msg string, ephemeralArgs ...any) {
 	o.log(context.Background(), 3, config.LevelWarning, msg, ephemeralArgs...)
 }
 
-func (o *Observer) Error(err error, ephemeralArgs ...any) {
+func (o *Observer) Error(msg string, err error, severity config.Severity, ephemeralArgs ...any) {
 	if o.span != nil {
 		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
 		attrs := argsToAttributes(ephemeralArgs...)
@@ -76,7 +76,7 @@ func (o *Observer) Error(err error, ephemeralArgs ...any) {
 	o.log(context.Background(), 3, config.LevelError, err.Error(), ephemeralArgs...)
 }
 
-func (o *Observer) Fatal(err error, ephemeralArgs ...any) {
+func (o *Observer) Fatal(msg string, err error, ephemeralArgs ...any) {
 	if o.span != nil {
 		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
 		attrs := argsToAttributes(ephemeralArgs...)
