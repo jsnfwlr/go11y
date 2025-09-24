@@ -9,8 +9,6 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	migrate "github.com/jackc/tern/v2/migrate"
-
-	"github.com/jsnfwlr/go11y/config"
 )
 
 type MigrationFS struct {
@@ -64,15 +62,25 @@ func (m MigrationFS) Open(name string) (file fs.File, fault error) {
 	return f, nil
 }
 
+type Configurator interface {
+	DBConStr() string
+}
+
 type DBMigrator struct {
 	context       context.Context
 	connection    *pgx.Conn
 	migrator      *migrate.Migrator
-	configuration config.Configuration
+	configuration Configurator
 	logger        Logger
 }
 
-func NewMigrator(ctx context.Context, logger Logger, connParams config.Configuration, fs embed.FS) (migrator DBMigrator, fault error) {
+type FilesystemProvider interface {
+	ReadDir(name string) ([]fs.FileInfo, error)
+	ReadFile(name string) ([]byte, error)
+	Open(name string) (fs.File, error)
+}
+
+func NewMigrator(ctx context.Context, logger Logger, connParams Configurator, fs FilesystemProvider) (migrator DBMigrator, fault error) {
 	conn, err := pgx.Connect(ctx, connParams.DBConStr())
 	if err != nil {
 		return DBMigrator{}, fmt.Errorf("could not connect to database: %w", err)
@@ -87,11 +95,7 @@ func NewMigrator(ctx context.Context, logger Logger, connParams config.Configura
 		return DBMigrator{}, fmt.Errorf("could not create migratorEx %w", err)
 	}
 
-	em := MigrationFS{
-		FS: fs,
-	}
-
-	err = mig.LoadMigrations(em)
+	err = mig.LoadMigrations(fs)
 	if err != nil {
 		return DBMigrator{}, fmt.Errorf("could not load migrations: %w", err)
 	}
@@ -206,7 +210,7 @@ func (m *DBMigrator) MigrateTo(sequence int32) (fault error) {
 	return nil
 }
 
-func RunMigrations(ctx context.Context, logger Logger, connParams config.Configuration, fs embed.FS, stopAfter int32, printSummary bool) (fault error) {
+func RunMigrations(ctx context.Context, logger Logger, connParams Configurator, fs FilesystemProvider, stopAfter int32, printSummary bool) (fault error) {
 	m, err := NewMigrator(ctx, logger, connParams, fs)
 	if err != nil {
 		return fmt.Errorf("could not create migrator: %w", err)
@@ -249,5 +253,5 @@ func RunMigrations(ctx context.Context, logger Logger, connParams config.Configu
 type Logger interface {
 	Debug(msg string, ephemeralArgs ...any)
 	Info(msg string, ephemeralArgs ...any)
-	Error(msg string, err error, severity config.Severity, ephemeralArgs ...any)
+	Error(msg string, err error, severity string, ephemeralArgs ...any)
 }

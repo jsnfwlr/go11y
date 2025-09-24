@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	. "github.com/jsnfwlr/go11y/config"
 	"github.com/jsnfwlr/go11y/db"
 	"github.com/jsnfwlr/go11y/etc/migrations"
 
@@ -23,14 +22,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	otelSDKTrace "go.opentelemetry.io/otel/sdk/trace"
 	otelTrace "go.opentelemetry.io/otel/trace"
-	_ "google.golang.org/genproto/googleapis/api/httpbody"
-	_ "google.golang.org/genproto/googleapis/rpc/status"
 )
 
 type Fields map[string]any
 
 type Observer struct {
-	cfg           Configuration
+	cfg           Configurator
 	output        io.Writer
 	level         slog.Level
 	logger        *slog.Logger
@@ -54,17 +51,7 @@ var obsKeyInstance go11yContextKey = "jsnfwlr/go11y"
 
 var og *Observer
 
-func options(cfg Configuration) *slog.HandlerOptions {
-	ho := &slog.HandlerOptions{
-		AddSource:   true,
-		Level:       cfg.LogLevel(),
-		ReplaceAttr: MakeReplacer(cfg.TrimModules(), cfg.TrimPaths()),
-	}
-
-	return ho
-}
-
-func Initialise(ctx context.Context, cfg Configuration, logOutput io.Writer, initialArgs ...any) (ctxWithGo11y context.Context, observer *Observer, fault error) {
+func Initialise(ctx context.Context, cfg Configurator, logOutput io.Writer, initialArgs ...any) (ctxWithGo11y context.Context, observer *Observer, fault error) {
 	if logOutput == nil {
 		logOutput = os.Stdout
 	}
@@ -72,7 +59,7 @@ func Initialise(ctx context.Context, cfg Configuration, logOutput io.Writer, ini
 	var err error
 
 	if cfg == nil {
-		cfg, err = Load()
+		cfg, err = LoadConfig()
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to load configuration: %w", err)
 		}
@@ -83,7 +70,7 @@ func Initialise(ctx context.Context, cfg Configuration, logOutput io.Writer, ini
 		return nil, nil, fmt.Errorf("failed to create tracer: %w", err)
 	}
 
-	opts := options(cfg)
+	opts := defaultOptions(cfg)
 
 	og = &Observer{
 		cfg:           cfg,
@@ -111,7 +98,12 @@ func Initialise(ctx context.Context, cfg Configuration, logOutput io.Writer, ini
 
 		og.db = odb
 
-		dbMig, err := db.NewMigrator(ctx, og, cfg, migrations.Migrations)
+		col, err := migrations.New()
+		if err != nil {
+			return ctx, nil, fmt.Errorf("failed to read migrations: %w", err)
+		}
+
+		dbMig, err := db.NewMigrator(ctx, og, cfg, col)
 		if err != nil {
 			return ctx, nil, fmt.Errorf("could not create migrator: %w", err)
 		}
@@ -135,11 +127,23 @@ func Initialise(ctx context.Context, cfg Configuration, logOutput io.Writer, ini
 }
 
 func Reset(ctxWithGo11y context.Context) (ctxWithResetObservability context.Context) {
-	og.logger = slog.New(slog.NewJSONHandler(og.output, options(og.cfg)))
+	og.logger = slog.New(slog.NewJSONHandler(og.output, defaultOptions(og.cfg)))
 	og.Debug("Observer reset", nil)
 	og.stableArgs = []any{}
 
 	return context.WithValue(ctxWithGo11y, obsKeyInstance, og)
+}
+
+// Get retrieves the Observer from the context. If none exists, it initializes a new one with default settings.
+func Get(ctx context.Context) (ctxWithObserver context.Context, observer *Observer) {
+	ob := ctx.Value(obsKeyInstance)
+	if ob == nil {
+		return context.WithValue(ctx, obsKeyInstance, og), og
+	}
+
+	o := ob.(*Observer)
+
+	return ctx, o
 }
 
 // Extend retrieves the Observer from the context and adds new arguments to its logger.
@@ -153,29 +157,6 @@ func Extend(ctx context.Context, newArgs ...any) (ctxWithGo11y context.Context, 
 	}
 
 	return context.WithValue(ctx, obsKeyInstance, o), o
-}
-
-func Expand(ctx context.Context, tracer otelTrace.Tracer, spanName string, spanKind otelTrace.SpanKind, newArgs ...any) (ctxWithSpan context.Context, observer *Observer) {
-	ctx, o := Span(ctx, tracer, spanName, spanKind)
-
-	if len(newArgs) != 0 {
-		o.logger = o.logger.With(newArgs...)
-		o.stableArgs = o.AddArgs(newArgs...)
-	}
-
-	return context.WithValue(ctx, obsKeyInstance, o), o
-}
-
-// Get retrieves the Observer from the context. If none exists, it initializes a new one with default settings.
-func Get(ctx context.Context) (ctxWithObserver context.Context, observer *Observer) {
-	ob := ctx.Value(obsKeyInstance)
-	if ob == nil {
-		return context.WithValue(ctx, obsKeyInstance, og), og
-	}
-
-	o := ob.(*Observer)
-
-	return ctx, o
 }
 
 // Span gets the Observer from the context and starts a new tracing span with the given name.
@@ -192,6 +173,20 @@ func Span(ctx context.Context, tracer otelTrace.Tracer, spanName string, spanKin
 	return context.WithValue(ctx, obsKeyInstance, o), o
 }
 
+// Expand retrieves the Observer from the context, starts a new tracing span with the given name, and adds new arguments to its logger.
+// If no Observer exists in the context, it initializes a new one with default settings and adds the arguments.
+func Expand(ctx context.Context, tracer otelTrace.Tracer, spanName string, spanKind otelTrace.SpanKind, newArgs ...any) (ctxWithSpan context.Context, observer *Observer) {
+	ctx, o := Span(ctx, tracer, spanName, spanKind)
+
+	if len(newArgs) != 0 {
+		o.logger = o.logger.With(newArgs...)
+		o.stableArgs = o.AddArgs(newArgs...)
+	}
+
+	return context.WithValue(ctx, obsKeyInstance, o), o
+}
+
+// Close ends all active spans and shuts down the trace provider to ensure all traces are flushed.
 func (o *Observer) Close() {
 	if o.span != nil {
 		o.span.End()
@@ -202,11 +197,12 @@ func (o *Observer) Close() {
 	}
 
 	if err := o.traceProvider.Shutdown(context.Background()); err != nil {
-		o.Fatal("could not shut down tracer", err, nil)
+		o.Fatal("could not shut down tracer", err)
 	}
 }
 
-func MakeReplacer(trimModules, trimPaths []string) func(groups []string, a slog.Attr) slog.Attr {
+// defaultReplacer creates a function to replace or modify log attributes
+func defaultReplacer(trimModules, trimPaths []string) func(groups []string, a slog.Attr) slog.Attr {
 	return func(groups []string, a slog.Attr) slog.Attr {
 		if os.Getenv("ENV") == "test" && a.Key == slog.TimeKey {
 			return slog.Attr{} // remove time key in test to make it easier to compare
@@ -287,19 +283,19 @@ func (o *Observer) log(ctx context.Context, skipCallers int, level slog.Level, m
 
 func (o *Observer) store(ctx context.Context, url, method string, statusCode int32, duration time.Duration, requestBody, responseBody []byte, requestHeaders, responseHeaders http.Header) (fault error) {
 	if o.db == nil {
-		o.Debug("Database is not enabled, skipping storage of API request", nil)
+		o.Debug("Database is not enabled, skipping storage of API request")
 		return nil
 	}
 
 	reqHead, err := json.Marshal(requestHeaders)
 	if err != nil {
-		o.Error("Failed to marshal request headers to JSON", err, SeverityMedium, nil)
+		o.Error("Failed to marshal request headers to JSON", err, SeverityMedium)
 		return err
 	}
 
 	respHead, err := json.Marshal(responseHeaders)
 	if err != nil {
-		o.Error("Failed to marshal response headers to JSON", err, SeverityMedium, nil)
+		o.Error("Failed to marshal response headers to JSON", err, SeverityMedium)
 		return err
 	}
 
@@ -327,7 +323,7 @@ func (o *Observer) store(ctx context.Context, url, method string, statusCode int
 
 	// Store the entry in the database
 	if err := o.db.queries.StoreAPIRequest(ctx, entry); err != nil {
-		o.Error("Failed to store entry in database", err, SeverityMedium, nil)
+		o.Error("Failed to store entry in database", err, SeverityMedium)
 		return err
 	}
 

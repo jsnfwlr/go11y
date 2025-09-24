@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	. "github.com/jsnfwlr/go11y/config"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"

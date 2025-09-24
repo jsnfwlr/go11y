@@ -9,7 +9,6 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/jsnfwlr/go11y"
-	"github.com/jsnfwlr/go11y/config"
 )
 
 func TestLoggingContext(t *testing.T) {
@@ -18,7 +17,7 @@ func TestLoggingContext(t *testing.T) {
 
 	buf := new(bytes.Buffer)
 
-	cfg, err := config.Load()
+	cfg, err := go11y.LoadConfig()
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}

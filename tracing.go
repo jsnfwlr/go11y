@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jsnfwlr/go11y/config"
-
 	"go.opentelemetry.io/otel"
 	otelAttribute "go.opentelemetry.io/otel/attribute"
 	otelExportTrace "go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -31,7 +29,7 @@ func (o *Observer) Tracer(name string, opts ...otelTrace.TracerOption) otelTrace
 // 	return o.activeSpan.SpanContext()
 // }
 
-func tracerProvider(ctx context.Context, cfg config.Configuration) (tracerProvider *otelSDKTrace.TracerProvider, fault error) {
+func tracerProvider(ctx context.Context, cfg Configurator) (tracerProvider *otelSDKTrace.TracerProvider, fault error) {
 	headers := map[string]string{
 		"content-type": "application/json",
 	}
@@ -123,4 +121,25 @@ func argsToAttributes(combinedArgs ...any) []otelAttribute.KeyValue {
 	}
 
 	return attrs
+}
+
+const (
+	SpanKindServer   = otelTrace.SpanKindServer
+	SpanKindClient   = otelTrace.SpanKindClient
+	SpanKindProducer = otelTrace.SpanKindProducer
+	SpanKindConsumer = otelTrace.SpanKindConsumer
+	SpanKindInternal = otelTrace.SpanKindInternal
+)
+
+type (
+	Tracer       otelTrace.Tracer
+	TracerOption otelTrace.TracerOption
+)
+
+func NewTracer(packageAddress string, options ...TracerOption) Tracer {
+	otelOpts := make([]otelTrace.TracerOption, len(options))
+	for i, opt := range options {
+		otelOpts[i] = otelTrace.TracerOption(opt)
+	}
+	return otel.Tracer(packageAddress, otelOpts...)
 }

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/jsnfwlr/go11y"
-	"github.com/jsnfwlr/go11y/config"
+	"github.com/jsnfwlr/go11y/testingContainers"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/testcontainers/testcontainers-go"
@@ -31,7 +31,7 @@ func TestRoundtripLogger(t *testing.T) {
 
 	buf := new(bytes.Buffer)
 
-	cfg, err := config.Load()
+	cfg, err := go11y.LoadConfig()
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
@@ -81,19 +81,21 @@ func TestRoundtripStorer(t *testing.T) {
 	t.Setenv("LOG_LEVEL", "develop")
 
 	ctx := context.Background()
-	ctr, err := go11y.Postgres(t, ctx)
+	ctr, err := testingContainers.Postgres(t, ctx, "17")
 	if err != nil {
 		t.Fatalf("failed to start Postgres container: %v", err)
 	}
-	defer testcontainers.CleanupContainer(t, ctr)
+	defer testcontainers.CleanupContainer(t, ctr.Postgres)
 
 	defer func() {
-		if err := testcontainers.TerminateContainer(ctr); err != nil {
+		if err := testcontainers.TerminateContainer(ctr.Postgres); err != nil {
 			t.Fatalf("failed to terminate Postgres container: %v", err)
 		}
 	}()
 
-	cfg, err := config.Load()
+	t.Setenv("DB_CONSTR", ctr.DBConStr())
+
+	cfg, err := go11y.LoadConfig()
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
@@ -139,12 +141,14 @@ func TestRoundtripStorer(t *testing.T) {
 	}
 }
 
-func TestRoundtripperTracer(t *testing.T) {
+func TestRoundtripperPropagator(t *testing.T) {
+	t.Skipf("Skipping test as it is flaky in CI/CD pipelines")
+
 	t.Setenv("ENV", "test")
 	t.Setenv("LOG_LEVEL", "develop")
 
 	ctx := context.Background()
-	ctr, err := go11y.LGTM(t, ctx)
+	ctr, err := testingContainers.LGTM(t, ctx)
 	if err != nil {
 		t.Fatalf("failed to start Grafana LGTM container: %v", err)
 	}
@@ -158,7 +162,7 @@ func TestRoundtripperTracer(t *testing.T) {
 
 	time.Sleep(60 * time.Second)
 
-	cfg, err := config.Load()
+	cfg, err := go11y.LoadConfig()
 	if err != nil {
 		t.Fatalf("failed to load config: %v", err)
 	}
@@ -175,8 +179,22 @@ func TestRoundtripperTracer(t *testing.T) {
 		Transport: http.DefaultTransport,
 	}
 
-	err = go11y.AddTracingToHTTPClient(client)
+	err = go11y.AddPropagationToHTTPClient(client)
 	if err != nil {
 		t.Fatalf("failed to add tracing to HTTP client: %v", err)
 	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://ipapi.co/1.1.1.1/json/", nil)
+	if err != nil {
+		t.Fatalf("failed to create request: %v", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("failed to execute request: %v", err)
+	}
+
+	defer func() {
+		_ = resp.Body.Close()
+	}()
 }

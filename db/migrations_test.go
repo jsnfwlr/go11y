@@ -6,14 +6,13 @@ import (
 	"testing"
 
 	"github.com/jsnfwlr/go11y"
-	"github.com/jsnfwlr/go11y/config"
 	"github.com/jsnfwlr/go11y/db"
 	"github.com/jsnfwlr/go11y/etc/migrations"
-	"github.com/testcontainers/testcontainers-go"
+	"github.com/jsnfwlr/go11y/testingContainers"
 )
 
 func TestFileSystem(t *testing.T) {
-	fs := migrations.Migrations
+	fs := migrations.Filesystem
 	em := db.MigrationFS{FS: fs}
 
 	fi, err := em.ReadDir(".")
@@ -39,44 +38,47 @@ func TestFileSystem(t *testing.T) {
 	}
 }
 
-func TestMigrator(t *testing.T) {
-	fs := migrations.Migrations
+func TesDatabase(t *testing.T) {
+	col, err := migrations.New()
+	if err != nil {
+		t.Fatalf("could not create the embedded filesystem: %v", err)
+	}
+
 	ctx := context.Background()
 
-	ctr, err := go11y.Postgres(t, ctx)
+	ctr, err := testingContainers.Postgres(t, ctx, "17")
 	if err != nil {
-		t.Fatalf("could not start Postgres container: %v", err)
+		t.Fatalf("could not start the Postgres container: %v", err)
 	}
 
-	testcontainers.CleanupContainer(t, ctr)
+	defer ctr.Cleanup(t)
 
-	dConStr, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("could not get the connection string: %v", err)
-	}
-	t.Setenv("DB_CONSTR", dConStr)
-
-	cfg, err := config.Load()
+	gCfg, err := go11y.LoadConfig()
 	if err != nil {
 		t.Fatalf("could not load the configuration: %v", err)
 	}
 
-	ctx, o := go11y.Get(ctx)
-
-	m, err := db.NewMigrator(ctx, o, cfg, fs)
+	ctx, o, err := go11y.Initialise(ctx, gCfg, nil)
 	if err != nil {
-		t.Fatalf("could not create the migrator: %v", err)
+		t.Fatalf("could not initialise the observer: %v", err)
 	}
 
-	i, err := m.Info(-1)
-	if err != nil {
-		t.Fatalf("could not get the migration info: %v", err)
-	}
+	t.Run("migrate", func(t *testing.T) {
+		m, err := db.NewMigrator(ctx, o, ctr, col)
+		if err != nil {
+			t.Fatalf("could not create the migrator: %v", err)
+		}
 
-	t.Logf("host: %s, currentVersion: %d, targetVersion: %d\n%s", i.DBConnStr, i.Migrations.CurrentVersion, i.Migrations.TargetVersion, i.Migrations.Summary)
+		i, err := m.Info(-1)
+		if err != nil {
+			t.Fatalf("could not get the migration info: %v", err)
+		}
 
-	err = db.RunMigrations(ctx, o, cfg, fs, -1, true)
-	if err != nil {
-		t.Fatalf("could not run the migrations: %v", err)
-	}
+		t.Logf("port: %s, database: %s, currentVersion: %d, targetVersion: %d\n%s", i.Port, i.Database, i.Migrations.CurrentVersion, i.Migrations.TargetVersion, i.Migrations.Summary)
+
+		err = db.RunMigrations(ctx, o, ctr, col, -1, true)
+		if err != nil {
+			t.Fatalf("could not run the migrations: %v", err)
+		}
+	})
 }

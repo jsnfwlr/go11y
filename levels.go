@@ -1,4 +1,4 @@
-package config
+package go11y
 
 import (
 	"log/slog"
