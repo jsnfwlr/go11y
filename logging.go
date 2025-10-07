@@ -71,7 +71,8 @@ func (o *Observer) Error(msg string, err error, severity string, ephemeralArgs .
 		o.span.SetAttributes(attrs...)
 		o.span.RecordError(err)
 	}
-	o.log(context.Background(), 3, LevelError, err.Error(), ephemeralArgs...)
+	ephemeralArgs = append(ephemeralArgs, "error", err.Error(), "severity", severity)
+	o.log(context.Background(), 3, LevelError, msg, ephemeralArgs...)
 }
 
 func (o *Observer) Fatal(msg string, err error, ephemeralArgs ...any) {
@@ -81,5 +82,6 @@ func (o *Observer) Fatal(msg string, err error, ephemeralArgs ...any) {
 		o.span.SetAttributes(attrs...)
 		o.span.RecordError(err)
 	}
-	o.log(context.Background(), 3, LevelFatal, err.Error(), ephemeralArgs...)
+	ephemeralArgs = append(ephemeralArgs, "error", err.Error(), "severity", SeverityHighest)
+	o.log(context.Background(), 3, LevelFatal, msg, ephemeralArgs...)
 }

@@ -3,6 +3,7 @@ package go11y
 import (
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/caarlos0/env/v10"
@@ -54,7 +55,14 @@ func LoadConfig() (cfg *Configuration, fault error) {
 	}
 
 	trimModules := strings.Split(h.TrimModules, ",")
-	trimPaths := strings.Split(h.TrimPaths, ",")
+
+	path, _ := os.Getwd()
+	trimPaths := []string{
+		path,
+	}
+	if h.TrimPaths != "" {
+		trimPaths = strings.Split(h.TrimPaths, ",")
+	}
 
 	c := &Configuration{
 		otelURL:     h.OtelURL,
