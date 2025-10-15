@@ -20,20 +20,18 @@ type Configuration struct {
 	trimPaths   []string
 }
 
-// CreateConfig creates a new Configuration instance populated with the provided parameters.
-// This is intended to be used for when you want to create a config without loading from environment variables.
-// The Configuration returned satisfies the Configurator interface, allowing it to be used interchangeably with configurations
-// loaded from environment variables.
-func CreateConfig(logLevel slog.Level, otelURL, dbConStr, serviceName string, trimModules, trimPaths []string) *Configuration {
-	return &Configuration{
-		logLevel:    logLevel,
-		otelURL:     otelURL,
-		strLevel:    logLevel.String(),
-		dbConStr:    dbConStr,
-		serviceName: serviceName,
-		trimModules: trimModules,
-		trimPaths:   trimPaths,
-	}
+// Configurator is an interface that defines the methods required for configuration of go11y.
+// It is used to abstract the configuration details from the observer implementation.
+// This allows for different implementations of configuration, such as loading from environment variables or using a
+// custom configuration struct - ideal for our unit tests or when you want to use a your own bespoke configuration
+// source
+type Configurator interface {
+	LogLevel() slog.Level
+	URL() string
+	DBConStr() string
+	ServiceName() string
+	TrimPaths() []string
+	TrimModules() []string
 }
 
 type interimConfig struct {
@@ -67,14 +65,30 @@ func LoadConfig() (cfg *Configuration, fault error) {
 	c := &Configuration{
 		otelURL:     h.OtelURL,
 		dbConStr:    h.DBConStr,
-		strLevel:    h.StrLevel,
-		logLevel:    StringToLevel(h.StrLevel),
+		strLevel:    ParseLevel(h.StrLevel).String(),
+		logLevel:    ParseLevel(h.StrLevel),
 		serviceName: h.ServiceName,
 		trimModules: trimModules,
 		trimPaths:   trimPaths,
 	}
 
 	return c, nil
+}
+
+// CreateConfig creates a new Configuration instance populated with the provided parameters.
+// This is intended to be used for when you want to create a config without loading from environment variables.
+// The Configuration returned satisfies the Configurator interface, allowing it to be used interchangeably with configurations
+// loaded from environment variables.
+func CreateConfig(logLevel slog.Level, otelURL, dbConStr, serviceName string, trimModules, trimPaths []string) *Configuration {
+	return &Configuration{
+		logLevel:    logLevel,
+		otelURL:     otelURL,
+		strLevel:    logLevel.String(),
+		dbConStr:    dbConStr,
+		serviceName: serviceName,
+		trimModules: trimModules,
+		trimPaths:   trimPaths,
+	}
 }
 
 // LogLevel returns the configured log level for the observer.
@@ -111,18 +125,4 @@ func (c *Configuration) TrimPaths() []string {
 // This method is part of the Configurator interface.
 func (c *Configuration) TrimModules() []string {
 	return c.trimModules
-}
-
-// Configurator is an interface that defines the methods required for configuration of go11y.
-// It is used to abstract the configuration details from the observer implementation.
-// This allows for different implementations of configuration, such as loading from environment variables or using a
-// custom configuration struct - ideal for our unit tests or when you want to use a your own bespoke configuration
-// source
-type Configurator interface {
-	LogLevel() slog.Level
-	URL() string
-	DBConStr() string
-	ServiceName() string
-	TrimPaths() []string
-	TrimModules() []string
 }

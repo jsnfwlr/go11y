@@ -234,7 +234,7 @@ func defaultReplacer(trimModules, trimPaths []string) func(groups []string, a sl
 			if lvl, ok := a.Value.Any().(slog.Level); ok {
 				level = lvl
 			} else {
-				level = StringToLevel(fmt.Sprintf("%v", a.Value.Any()))
+				level = ParseLevel(fmt.Sprintf("%v", a.Value.Any()))
 			}
 
 			switch level {
@@ -259,9 +259,9 @@ func defaultReplacer(trimModules, trimPaths []string) func(groups []string, a sl
 	}
 }
 
-func (o *Observer) log(ctx context.Context, skipCallers int, level slog.Level, msg string, args ...any) {
+func (o *Observer) log(ctx context.Context, skipCallers int, level slog.Level, msg string, args ...any) (logged bool) {
 	if o.logger == nil || !o.logger.Enabled(ctx, level) {
-		return
+		return false
 	}
 	var pc uintptr
 	var pcs [1]uintptr
@@ -279,6 +279,8 @@ func (o *Observer) log(ctx context.Context, skipCallers int, level slog.Level, m
 		ctx = context.Background()
 	}
 	_ = o.logger.Handler().Handle(ctx, r)
+
+	return true
 }
 
 func (o *Observer) store(ctx context.Context, url, method string, statusCode int32, duration time.Duration, requestBody, responseBody []byte, requestHeaders, responseHeaders http.Header) (fault error) {

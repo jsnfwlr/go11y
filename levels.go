@@ -15,7 +15,7 @@ const (
 	LevelFatal   = slog.Level(12)
 )
 
-func StringToLevel(level string) slog.Level {
+func ParseLevel(level string) slog.Level {
 	switch strings.ToLower(level) {
 	case "develop":
 		return LevelDevelop // Custom level for development, not used in production
