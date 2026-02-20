@@ -10,7 +10,7 @@ import (
 func (o *Observer) Develop(msg string, ephemeralArgs ...any) {
 	logged := o.log(context.Background(), 3, LevelDevelop, msg, ephemeralArgs...)
 
-	if logged && o.span != nil {
+	if logged && o.span != nil && o.traceProvider != nil {
 		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
 		attrs := argsToAttributes(ephemeralArgs...)
 		o.span.SetAttributes(attrs...)
@@ -22,7 +22,7 @@ func (o *Observer) Develop(msg string, ephemeralArgs ...any) {
 func (o *Observer) Debug(msg string, ephemeralArgs ...any) {
 	logged := o.log(context.Background(), 3, LevelDebug, msg, ephemeralArgs...)
 
-	if logged && o.span != nil {
+	if logged && o.span != nil && o.traceProvider != nil {
 		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
 		attrs := argsToAttributes(ephemeralArgs...)
 		o.span.SetAttributes(attrs...)
@@ -34,7 +34,7 @@ func (o *Observer) Debug(msg string, ephemeralArgs ...any) {
 func (o *Observer) Info(msg string, ephemeralArgs ...any) {
 	logged := o.log(context.Background(), 3, LevelInfo, msg, ephemeralArgs...)
 
-	if logged && o.span != nil {
+	if logged && o.span != nil && o.traceProvider != nil {
 		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
 		attrs := argsToAttributes(ephemeralArgs...)
 		o.span.SetAttributes(attrs...)
@@ -46,7 +46,7 @@ func (o *Observer) Info(msg string, ephemeralArgs ...any) {
 func (o *Observer) Notice(msg string, ephemeralArgs ...any) {
 	logged := o.log(context.Background(), 3, LevelNotice, msg, ephemeralArgs...)
 
-	if logged && o.span != nil {
+	if logged && o.span != nil && o.traceProvider != nil {
 		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
 		attrs := argsToAttributes(ephemeralArgs...)
 		o.span.SetAttributes(attrs...)
@@ -58,7 +58,7 @@ func (o *Observer) Notice(msg string, ephemeralArgs ...any) {
 func (o *Observer) Warning(msg string, ephemeralArgs ...any) {
 	logged := o.log(context.Background(), 3, LevelWarning, msg, ephemeralArgs...)
 
-	if logged && o.span != nil {
+	if logged && o.span != nil && o.traceProvider != nil {
 		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
 		attrs := argsToAttributes(ephemeralArgs...)
 		o.span.SetAttributes(attrs...)
@@ -77,7 +77,7 @@ func (o *Observer) Error(msg string, err error, severity string, ephemeralArgs .
 	ephemeralArgs = append(ephemeralArgs, "error", err.Error(), "severity", severity)
 	logged := o.log(context.Background(), 3, LevelError, msg, ephemeralArgs...)
 
-	if logged && o.span != nil {
+	if logged && o.span != nil && o.traceProvider != nil {
 		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
 		attrs := argsToAttributes(ephemeralArgs...)
 		o.span.SetAttributes(attrs...)
@@ -91,7 +91,7 @@ func (o *Observer) Fatal(msg string, err error, ephemeralArgs ...any) {
 	ephemeralArgs = append(ephemeralArgs, "error", err.Error(), "severity", SeverityHighest)
 	logged := o.log(context.Background(), 3, LevelFatal, msg, ephemeralArgs...)
 
-	if logged && o.span != nil {
+	if logged && o.span != nil && o.traceProvider != nil {
 		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
 		attrs := argsToAttributes(ephemeralArgs...)
 		o.span.SetAttributes(attrs...)
@@ -104,8 +104,8 @@ func (o *Observer) Fatal(msg string, err error, ephemeralArgs ...any) {
 // This is intended to for use in situations where an Observer instance is not available such as in the main function before the observer has been initialised.
 func Fatal(msg string, err error, ephemeralArgs ...any) {
 	ctx := context.Background()
-	cfg := CreateConfig(LevelFatal, "", "", "", nil, nil)
-	_, o, _ := Initialise(ctx, cfg, os.Stderr, nil)
+	cfg := CreateConfig(LevelFatal, "", "", "", []string{}, []string{})
+	_, o, _ := Initialise(ctx, cfg, os.Stderr)
 	ephemeralArgs = append(ephemeralArgs, "error", err.Error(), "severity", SeverityHighest)
 	o.log(context.Background(), 3, LevelFatal, msg, ephemeralArgs...)
 	os.Exit(1)

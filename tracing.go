@@ -21,15 +21,11 @@ func (o *Observer) Tracer(name string, opts ...otelTrace.TracerOption) otelTrace
 	return o.traceProvider.Tracer(name, opts...)
 }
 
-// func (o *Observer) SpanContext() otelTrace.SpanContext {
-// 	if o.activeSpan == nil {
-// 		return otelTrace.SpanContext{}
-// 	}
-
-// 	return o.activeSpan.SpanContext()
-// }
-
 func tracerProvider(ctx context.Context, cfg Configurator) (tracerProvider *otelSDKTrace.TracerProvider, fault error) {
+	if cfg == nil || cfg.URL() == "" {
+		return nil, nil
+	}
+
 	headers := map[string]string{
 		"content-type": "application/json",
 	}

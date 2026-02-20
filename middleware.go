@@ -52,7 +52,7 @@ type Origin struct {
 // LogRequest is a middleware that logs incoming HTTP requests and their details
 // It extracts tracing information from the request headers and starts a new span for the request
 // It also logs the request details using go11y, adding the go11y Observer to the request context in the process
-func LogRequest(next http.Handler) http.Handler {
+func (o *Observer) LogRequest(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Log&Trace the request
 		prop := otel.GetTextMapPropagator()
@@ -60,8 +60,6 @@ func LogRequest(next http.Handler) http.Handler {
 		ctx := prop.Extract(r.Context(), propagation.HeaderCarrier(r.Header))
 
 		requestID := GetRequestID(ctx)
-
-		tracer := otel.Tracer(requestID)
 
 		ctx = Reset(ctx)
 
@@ -74,22 +72,26 @@ func LogRequest(next http.Handler) http.Handler {
 			},
 		}
 
-		// tracer
-		opts := []trace.SpanStartOption{
-			trace.WithSpanKind(trace.SpanKindServer),
-			trace.WithAttributes(argsToAttributes(args...)...),
+		var span trace.Span
+		if o.traceProvider != nil {
+			// tracer
+			tracer := otel.Tracer(requestID)
+			opts := []trace.SpanStartOption{
+				trace.WithSpanKind(trace.SpanKindServer),
+				trace.WithAttributes(argsToAttributes(args...)...),
+			}
+
+			_, span = tracer.Start(ctx, "HTTP "+r.Method+" "+r.URL.Path, opts...)
+
+			args = append(args,
+				FieldSpanID, span.SpanContext().SpanID(),
+				FieldTraceID, span.SpanContext().TraceID(),
+			)
 		}
-
-		ctx, span := tracer.Start(ctx, "HTTP "+r.Method+" "+r.URL.Path, opts...)
-
-		args = append(args,
-			FieldSpanID, span.SpanContext().SpanID(),
-			FieldTraceID, span.SpanContext().TraceID(),
-		)
 
 		ctx, o := Extend(ctx, args...)
 
-		o.Debug("request received", span)
+		o.Debug("request received")
 
 		r = r.WithContext(ctx)
 
@@ -97,8 +99,9 @@ func LogRequest(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 
 		// Log the response
-		// log.Printf("Response sent for: %s %s", r.Method, r.URL.Path)
-		o.Debug("request processed", span)
-		span.End()
+		o.Debug("response returned")
+		if o.traceProvider != nil && span != nil {
+			span.End()
+		}
 	})
 }

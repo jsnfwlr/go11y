@@ -38,7 +38,7 @@ _, o, _ := go11y.Initialise(ctx, nil, os.Stdout)
 
 ctx, span := otel.Tracer("packageName").Start(ctx, "functionName", trace.WithSpanKind(trace.SpanKindClient))
 
-o.Info("structured logging", span)
+o.Info("structured logging")
 ```
 
 ### Roundtrippers

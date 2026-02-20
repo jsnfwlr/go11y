@@ -111,7 +111,7 @@ func Initialise(ctx context.Context, cfg Configurator, logOutput io.Writer, init
 		if err != nil {
 			return ctx, nil, fmt.Errorf("could not migrate database: %w", err)
 		}
-		og.Debug("Database migrated successfully", nil)
+		og.Debug("Database migrated successfully")
 	}
 
 	ctx = context.WithValue(ctx, obsKeyInstance, og)
@@ -121,14 +121,14 @@ func Initialise(ctx context.Context, cfg Configurator, logOutput io.Writer, init
 
 	slog.SetDefault(og.logger)
 
-	fmt.Println("Initialised observer with context")
+	og.Develop("Initialised observer with context")
 
 	return ctx, og, nil
 }
 
 func Reset(ctxWithGo11y context.Context) (ctxWithResetObservability context.Context) {
 	og.logger = slog.New(slog.NewJSONHandler(og.output, defaultOptions(og.cfg)))
-	og.Debug("Observer reset", nil)
+	og.Debug("Observer reset")
 	og.stableArgs = []any{}
 
 	return context.WithValue(ctxWithGo11y, obsKeyInstance, og)
@@ -196,8 +196,10 @@ func (o *Observer) Close() {
 		}
 	}
 
-	if err := o.traceProvider.Shutdown(context.Background()); err != nil {
-		o.Fatal("could not shut down tracer", err)
+	if o.traceProvider != nil {
+		if err := o.traceProvider.Shutdown(context.Background()); err != nil {
+			o.Fatal("could not shut down tracer", err)
+		}
 	}
 }
 
