@@ -10,8 +10,11 @@ tracing for your application.
 go11y wraps the Go standard lib slog package, so it's structured logging with JSON from the outset, just more convenient.
 
 ```go
-_, o, _ := go11y.Initialise(ctx, nil, os.Stdout, "arg1", "val1")
-o.Info("structured logging", nil, "arg2", "val2")
+ctx := context.Background()
+cfg := go11y.CreateConfig(go11y.Info, "", "postgres://user:pass@localhost:5234/database_name", "serviceName". []string{}, []string{})
+
+_, o, _ := go11y.Initialise(ctx, cfg, os.Stdout, os.Strerr, "arg1", "val1")
+o.Info("structured logging", "arg2", "val2")
 ```
 ```json
 {
@@ -30,15 +33,18 @@ o.Info("structured logging", nil, "arg2", "val2")
 
 ### Tracing
 
-go11y doesn't handle the tracing for you (yet) but it does leave room for it so you don't need to go to too much effort to integrate it.
+go11y has been expanded to cover integrated tracing by calling the Span() function and passing in a context that already contains go11y's observer.
 
 
 ```go
-_, o, _ := go11y.Initialise(ctx, nil, os.Stdout)
+ctx := context.Background()
+cfg := go11y.CreateConfig(go11y.Info, "http://otelcollector:8080", "postgres://user:pass@localhost:5234/database_name", "serviceName". []string{}, []string{})
 
-ctx, span := otel.Tracer("packageName").Start(ctx, "functionName", trace.WithSpanKind(trace.SpanKindClient))
+ctx, _, _ = go11y.Initialise(ctx, cfg, os.Stdout, os.Stderr)
+tracer := otel.Tracer("packageName")
+_, o, _ = go11y.Span(ctx, tracer, "functionName", trace.WithSpanKind(trace.SpanKindClient))
 
-o.Info("structured logging", span)
+o.Info("Tracing and Logging in one")
 ```
 
 ### Roundtrippers
