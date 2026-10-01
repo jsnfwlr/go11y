@@ -1,3 +1,4 @@
+// Package migrations provides functionality to manage database migrations using embedded SQL files.
 package migrations
 
 import (
@@ -9,15 +10,18 @@ import (
 )
 
 //go:embed *.sql
-var Filesystem embed.FS
+var Filesystem embed.FS // Embedded filesystem containing migration SQL files.
 
+// MigPattern is the regex pattern to match valid migration filenames.
 var MigPattern = regexp.MustCompile(`^[0-9]{4}_.+\.sql$`)
 
+// Collection represents a collection of database migrations.
 type Collection struct {
 	Filesystem embed.FS
 	Migrations []fs.DirEntry
 }
 
+// New creates a new Collection of migrations from the embedded filesystem.
 func New() (collection Collection, fault error) {
 	files, _ := Filesystem.ReadDir(".")
 
@@ -34,10 +38,12 @@ func New() (collection Collection, fault error) {
 	}, nil
 }
 
+// Steps returns the number of migration steps available.
 func (c Collection) Steps() (number int32) {
 	return int32(len(c.Migrations))
 }
 
+// ReadDir reads the directory from the embedded filesystem.
 func (c Collection) ReadDir(name string) ([]fs.FileInfo, error) {
 	files, err := c.Filesystem.ReadDir(name)
 	if err != nil {
@@ -59,6 +65,7 @@ func (c Collection) ReadDir(name string) ([]fs.FileInfo, error) {
 	return r, nil
 }
 
+// ReadFile reads a file from the embedded filesystem.
 func (c Collection) ReadFile(name string) (contents []byte, fault error) {
 	b, err := c.Filesystem.ReadFile(name)
 	if err != nil {
@@ -68,6 +75,7 @@ func (c Collection) ReadFile(name string) (contents []byte, fault error) {
 	return b, nil
 }
 
+// Glob returns the file paths matching the given pattern from the embedded filesystem.
 func (c Collection) Glob(pattern string) (matches []string, fault error) {
 	matches, err := fs.Glob(c.Filesystem, pattern)
 	if err != nil {
@@ -85,6 +93,7 @@ func (c Collection) Glob(pattern string) (matches []string, fault error) {
 	return filteredMatches, nil
 }
 
+// Open opens a file from the embedded filesystem.
 func (c Collection) Open(name string) (file fs.File, fault error) {
 	f, err := c.Filesystem.Open(name)
 	if err != nil {

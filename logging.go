@@ -2,111 +2,241 @@ package go11y
 
 import (
 	"context"
+	"fmt"
 	"os"
+	"slices"
 )
 
-// Develop records an event on the tracing span if it is available and logs a develop message via the observer (if the observer's log-level allows).
-// This is intended for use during development and may be too verbose or could leak secrets in production use, and should be filtered out in such environments.
+// Develop logs a development-only message and adds an event to the span if available.
+// $msg is the message to log
+// $ephemeralArgs are any additional key-value pairs to include in the log and span attributes.
 func (o *Observer) Develop(msg string, ephemeralArgs ...any) {
-	logged := o.log(context.Background(), 3, LevelDevelop, msg, ephemeralArgs...)
-
-	if logged && o.span != nil && o.traceProvider != nil {
-		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
-		attrs := argsToAttributes(ephemeralArgs...)
+	logged := o.log(o.skipCallers, LevelDevelop, msg, ephemeralArgs...)
+	if logged && o.span != nil {
+		attrs := argsToAttributes(append(o.stableArgs, ephemeralArgs)...)
 		o.span.SetAttributes(attrs...)
 		o.span.AddEvent(msg)
 	}
 }
 
-// Debug records an event on the tracing span if it is available and logs a debug message via the observer (if the observer's log-level allows).
+// Debug logs a debug message and adds an event to the span if available.
+// $msg is the message to log
+// $ephemeralArgs are any additional key-value pairs to include in the log and span attributes
 func (o *Observer) Debug(msg string, ephemeralArgs ...any) {
-	logged := o.log(context.Background(), 3, LevelDebug, msg, ephemeralArgs...)
-
-	if logged && o.span != nil && o.traceProvider != nil {
-		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
-		attrs := argsToAttributes(ephemeralArgs...)
+	logged := o.log(o.skipCallers, LevelDebug, msg, ephemeralArgs...)
+	if logged && o.span != nil {
+		attrs := argsToAttributes(append(o.stableArgs, ephemeralArgs)...)
 		o.span.SetAttributes(attrs...)
 		o.span.AddEvent(msg)
 	}
 }
 
-// Info records an event on the tracing span if it is available and logs an information message via the observer (if the observer's log-level allows).
+// Info logs an informational message and adds an event to the span if available.
+// $msg is the message to log
+// $ephemeralArgs are any additional key-value pairs to include in the log and span attributes.
 func (o *Observer) Info(msg string, ephemeralArgs ...any) {
-	logged := o.log(context.Background(), 3, LevelInfo, msg, ephemeralArgs...)
-
-	if logged && o.span != nil && o.traceProvider != nil {
-		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
-		attrs := argsToAttributes(ephemeralArgs...)
+	logged := o.log(o.skipCallers, LevelInfo, msg, ephemeralArgs...)
+	if logged && o.span != nil {
+		attrs := argsToAttributes(append(o.stableArgs, ephemeralArgs)...)
 		o.span.SetAttributes(attrs...)
 		o.span.AddEvent(msg)
 	}
 }
 
-// Notice records an event on the tracing span if it is available and logs a notice message via the observer (if the observer's log-level allows).
+// Notice logs a notice message and adds an event to the span if available.
+// $msg is the message to log
+// $ephemeralArgs are any additional key-value pairs to include in the log and span attributes.
 func (o *Observer) Notice(msg string, ephemeralArgs ...any) {
-	logged := o.log(context.Background(), 3, LevelNotice, msg, ephemeralArgs...)
-
-	if logged && o.span != nil && o.traceProvider != nil {
-		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
-		attrs := argsToAttributes(ephemeralArgs...)
+	logged := o.log(o.skipCallers, LevelNotice, msg, ephemeralArgs...)
+	if logged && o.span != nil {
+		attrs := argsToAttributes(append(o.stableArgs, ephemeralArgs)...)
 		o.span.SetAttributes(attrs...)
 		o.span.AddEvent(msg)
 	}
 }
 
-// Warning records an event on the tracing span if it is available and logs a warning message via the observer (if the observer's log-level allows).
+// Warning logs a warning message and adds an event to the span if available.
+// $msg is the message to log
+// $ephemeralArgs are any additional key-value pairs to include in the log and span attributes.
 func (o *Observer) Warning(msg string, ephemeralArgs ...any) {
-	logged := o.log(context.Background(), 3, LevelWarning, msg, ephemeralArgs...)
-
-	if logged && o.span != nil && o.traceProvider != nil {
-		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
-		attrs := argsToAttributes(ephemeralArgs...)
+	logged := o.log(o.skipCallers, LevelWarning, msg, ephemeralArgs...)
+	if logged && o.span != nil {
+		attrs := argsToAttributes(append(o.stableArgs, ephemeralArgs)...)
 		o.span.SetAttributes(attrs...)
 		o.span.AddEvent(msg)
 	}
 }
 
-// Warn is an alias for Warning to maintain compatibility with other logging libraries.
+// Warn a backward compatibility alias for Warning.
+// $msg is the message to log
+// $ephemeralArgs are any additional key-value pairs to include in the log and span attributes.
 func (o *Observer) Warn(msg string, ephemeralArgs ...any) {
-	o.Warning(msg, ephemeralArgs...)
+	logged := o.log(o.skipCallers, LevelWarning, msg, ephemeralArgs...)
+	if logged && o.span != nil {
+		attrs := argsToAttributes(append(o.stableArgs, ephemeralArgs)...)
+		o.span.SetAttributes(attrs...)
+		o.span.AddEvent(msg)
+	}
 }
 
-// Error records an error on the tracing span if it is available and logs an error message via the observer (if the observer's log-level allows), with the
-// specified severity level.
+// Error logs an error message, records the error in the span if available, and sets the severity.
+// $msg is the message to log
+// $err is the error to record in the span and include in the log
+// $severity is a string representing the severity of the error (e.g., "low", "medium", "high")
+// $ephemeralArgs are any additional key-value pairs to include in the log and span attributes.
 func (o *Observer) Error(msg string, err error, severity string, ephemeralArgs ...any) {
-	ephemeralArgs = append(ephemeralArgs, "error", err.Error(), "severity", severity)
-	logged := o.log(context.Background(), 3, LevelError, msg, ephemeralArgs...)
-
-	if logged && o.span != nil && o.traceProvider != nil {
-		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
-		attrs := argsToAttributes(ephemeralArgs...)
+	if err == nil {
+		panic(fmt.Sprintf("Error cannot be nil. Use Info or Debug for non-error messages. Message: %s", msg))
+	}
+	logged := o.error(o.skipCallers, LevelError, msg, append(ephemeralArgs, "error", err.Error(), "severity", severity)...)
+	if logged && o.span != nil {
+		attrs := argsToAttributes(append(o.stableArgs, ephemeralArgs)...)
 		o.span.SetAttributes(attrs...)
 		o.span.RecordError(err)
 	}
 }
 
-// Fatal records an error on the tracing span if it is available and logs a fatal error message via the observer with the
-// highest severity level and then exits the application with a status code of 1.
+// Fatal logs a fatal error message with the highest severity, records the error in the span if available, and then
+// exits the application abruptly.
+// $msg is the message to log
+// $err is the error to record in the span and include in the log
+// $ephemeralArgs are any additional key-value pairs to include in the log and span attributes.
 func (o *Observer) Fatal(msg string, err error, ephemeralArgs ...any) {
-	ephemeralArgs = append(ephemeralArgs, "error", err.Error(), "severity", SeverityHighest)
-	logged := o.log(context.Background(), 3, LevelFatal, msg, ephemeralArgs...)
+	if err == nil {
+		panic(fmt.Sprintf("Error cannot be nil. Use Info or Debug for non-error messages. Message: %s", msg))
+	}
 
-	if logged && o.span != nil && o.traceProvider != nil {
-		ephemeralArgs = append(o.stableArgs, ephemeralArgs...)
-		attrs := argsToAttributes(ephemeralArgs...)
+	logged := o.error(o.skipCallers, LevelFatal, msg, append(ephemeralArgs, "error", err.Error(), "severity", SeverityHighest)...)
+	if logged && o.span != nil {
+		attrs := argsToAttributes(append(o.stableArgs, ephemeralArgs)...)
 		o.span.SetAttributes(attrs...)
 		o.span.RecordError(err)
 	}
+
 	os.Exit(1)
 }
 
-// Fatal logs a fatal error message with the highest severity level and then exits the application with a status code of 1.
-// This is intended to for use in situations where an Observer instance is not available such as in the main function before the observer has been initialised.
-func Fatal(msg string, err error, ephemeralArgs ...any) {
-	ctx := context.Background()
-	cfg := CreateConfig(LevelFatal, "", "", "", []string{}, []string{})
-	_, o, _ := Initialise(ctx, cfg, os.Stderr)
+// Panic logs a fatal error message with the highest severity, records the error in the span if available, and then
+// exits the application cleanly.
+// $msg is the message to log
+// $err is the error to record in the span and include in the log
+// $ephemeralArgs are any additional key-value pairs to include in the log and span attributes.
+func (o *Observer) Panic(msg string, err error, ephemeralArgs ...any) {
+	if err == nil {
+		panic(fmt.Sprintf("Error cannot be nil. Use Info or Debug for non-error messages. Message: %s", msg))
+	}
+
+	logged := o.error(o.skipCallers, LevelPanic, msg, append(ephemeralArgs, "error", err.Error(), "severity", SeverityHighest)...)
+	if logged && o.span != nil {
+		attrs := argsToAttributes(append(o.stableArgs, ephemeralArgs)...)
+		o.span.SetAttributes(attrs...)
+		o.span.RecordError(err)
+	}
+
+	panic(msg)
+}
+
+// Panic is intended to be called before the observer has been configured and the context lacks an observer.
+// It will log the fatal error to stderr in the JSON format used by go11y and exit the application cleanly
+// $msg is the message to log
+// $err is the error to record in the span and include in the log
+// $ephemeralArgs are any additional key-value pairs to include in the log and span attributes.
+func Panic(msg string, err error, ephemeralArgs ...any) {
+	if err == nil {
+		panic(fmt.Sprintf("Error cannot be nil. Use Info or Debug for non-error messages. Message: %s", msg))
+	}
+
+	cfg := &Configuration{
+		logLevel:    LevelInfo,
+		otelURL:     "",
+		strLevel:    "info",
+		databaseURL: "",
+		serviceName: "",
+		trimModules: []string{},
+		trimPaths:   []string{},
+	}
+
+	_, o, _ := Initialise(context.Background(), cfg, nil, os.Stderr)
 	ephemeralArgs = append(ephemeralArgs, "error", err.Error(), "severity", SeverityHighest)
-	o.log(context.Background(), 3, LevelFatal, msg, ephemeralArgs...)
-	os.Exit(1)
+	o.error(o.skipCallers, LevelPanic, msg, ephemeralArgs...)
+
+	panic(msg)
+}
+
+// Fatal is intended to be called before the observer has been configured and the context lacks an observer.
+// It will log the fatal error to stderr in the JSON format used by go11y and exit the application abruptly.
+// $msg is the message to log
+// $err is the error to record in the span and include in the log
+// $exitCode is the code to exit the application with (defaults to 1 if less than 1)
+// $ephemeralArgs are any additional key-value pairs to include in the log and span attributes.
+func Fatal(msg string, err error, exitCode int, ephemeralArgs ...any) {
+	if err == nil {
+		panic(fmt.Sprintf("Error cannot be nil. Use Info or Debug for non-error messages. Message: %s", msg))
+	}
+
+	cfg := &Configuration{
+		logLevel:    LevelInfo,
+		otelURL:     "",
+		strLevel:    "info",
+		databaseURL: "",
+		serviceName: "",
+		trimModules: []string{},
+		trimPaths:   []string{},
+	}
+
+	_, o, _ := Initialise(context.Background(), cfg, nil, os.Stderr)
+	ephemeralArgs = append(ephemeralArgs, "error", err.Error(), "severity", SeverityHighest)
+	o.error(o.skipCallers, LevelFatal, msg, ephemeralArgs...)
+
+	if exitCode < 1 {
+		exitCode = 1
+	}
+
+	os.Exit(exitCode)
+}
+
+// Error is intended to be called before the observer has been configured and the context lacks an observer.
+// It will log the error to stderr in the JSON format used by go11y.
+// $msg is the message to log
+// $err is the error to record in the span and include in the log
+// $severity is a string representing the severity of the error (e.g., "low", "medium", "high")
+// $ephemeralArgs are any additional key-value pairs to include in the log and span attributes.
+func Error(msg string, err error, severity string, ephemeralArgs ...any) {
+	if err == nil {
+		panic(fmt.Sprintf("Error cannot be nil. Use Info or Debug for non-error messages. Message: %s", msg))
+	}
+
+	cfg := &Configuration{
+		logLevel:    LevelInfo,
+		otelURL:     "",
+		strLevel:    "info",
+		databaseURL: "",
+		serviceName: "",
+		trimModules: []string{},
+		trimPaths:   []string{},
+	}
+
+	_, o, _ := Initialise(context.Background(), cfg, nil, os.Stderr)
+	ephemeralArgs = append(ephemeralArgs, "error", err.Error(), "severity", severity)
+	o.error(o.skipCallers, LevelError, msg, ephemeralArgs...)
+}
+
+// DeduplicateArgs removes duplicate keys from a list of key-value pairs.
+func DeduplicateArgs(args []any) (deduped []any) {
+	keys := []string{}
+	uniq := []any{}
+
+	for i := 0; i < len(args); i += 2 {
+		if len(args) >= i+2 {
+			key := fmt.Sprintf("%v", args[i])
+			if slices.Contains(keys, key) {
+				continue
+			}
+
+			keys = append(keys, key)
+			uniq = append(uniq, args[i], args[i+1])
+		}
+	}
+
+	return uniq
 }

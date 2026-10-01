@@ -1,3 +1,4 @@
+// Package db provides database migration functionality using embedded filesystem for migration files.
 package db
 
 import (
@@ -11,10 +12,12 @@ import (
 	migrate "github.com/jackc/tern/v2/migrate"
 )
 
+// MigrationFS provides methods to interact with an embedded filesystem for migrations.
 type MigrationFS struct {
 	FS embed.FS
 }
 
+// ReadDir reads the directory from the embedded filesystem.
 func (m MigrationFS) ReadDir(name string) ([]fs.FileInfo, error) {
 	files, err := m.FS.ReadDir(name)
 	if err != nil {
@@ -35,6 +38,7 @@ func (m MigrationFS) ReadDir(name string) ([]fs.FileInfo, error) {
 	return r, nil
 }
 
+// ReadFile reads a file from the embedded filesystem.
 func (m MigrationFS) ReadFile(name string) (contents []byte, fault error) {
 	b, err := m.FS.ReadFile(name)
 	if err != nil {
@@ -44,6 +48,7 @@ func (m MigrationFS) ReadFile(name string) (contents []byte, fault error) {
 	return b, nil
 }
 
+// Glob returns the file paths matching the given pattern from the embedded filesystem.
 func (m MigrationFS) Glob(pattern string) (matches []string, fault error) {
 	matches, err := fs.Glob(m.FS, pattern)
 	if err != nil {
@@ -53,6 +58,7 @@ func (m MigrationFS) Glob(pattern string) (matches []string, fault error) {
 	return matches, nil
 }
 
+// Open opens a file from the embedded filesystem.
 func (m MigrationFS) Open(name string) (file fs.File, fault error) {
 	f, err := m.FS.Open(name)
 	if err != nil {
@@ -62,10 +68,12 @@ func (m MigrationFS) Open(name string) (file fs.File, fault error) {
 	return f, nil
 }
 
+// Configurator defines the interface for database configuration.
 type Configurator interface {
-	DBConStr() string
+	DatabaseURL() string
 }
 
+// DBMigrator handles database migrations.
 type DBMigrator struct {
 	context       context.Context
 	connection    *pgx.Conn
@@ -74,14 +82,16 @@ type DBMigrator struct {
 	logger        Logger
 }
 
+// FilesystemProvider defines the interface for providing migration files from a filesystem.
 type FilesystemProvider interface {
 	ReadDir(name string) ([]fs.FileInfo, error)
 	ReadFile(name string) ([]byte, error)
 	Open(name string) (fs.File, error)
 }
 
+// NewMigrator creates a new DBMigrator instance.
 func NewMigrator(ctx context.Context, logger Logger, connParams Configurator, fs FilesystemProvider) (migrator DBMigrator, fault error) {
-	conn, err := pgx.Connect(ctx, connParams.DBConStr())
+	conn, err := pgx.Connect(ctx, connParams.DatabaseURL())
 	if err != nil {
 		return DBMigrator{}, fmt.Errorf("could not connect to database: %w", err)
 	}
@@ -109,6 +119,7 @@ func NewMigrator(ctx context.Context, logger Logger, connParams Configurator, fs
 	}, nil
 }
 
+// Info holds information about the current migration status.
 type Info struct {
 	DBConnStr  string
 	Port       string
@@ -116,6 +127,7 @@ type Info struct {
 	Migrations MigrationInfo
 }
 
+// MigrationInfo holds information about the migration status.
 type MigrationInfo struct {
 	CurrentVersion int32
 	TargetVersion  int32
@@ -123,21 +135,29 @@ type MigrationInfo struct {
 	Summary        string
 }
 
+// Stage represents a single migration stage.
 type Stage struct {
 	Sequence int32
 	Name     string
 	Migrated bool
 }
 
+// ErrInvalidSequenceNumber returns an error indicating an invalid sequence number.
 func ErrInvalidSequenceNumber(seq int32) error {
 	return fmt.Errorf("provided value '%d' is an invalid sequence number", seq)
 }
 
+// GetCurrentVersion retrieves the current migration version from the database.
+func (m DBMigrator) GetCurrentVersion() (currentVersion int32, fault error) {
+	return m.migrator.GetCurrentVersion(m.context)
+}
+
+// Info provides information about the current migration status.
 func (m DBMigrator) Info(stopAfter int32) (information Info, fault error) {
 	var err error
 
 	i := Info{
-		DBConnStr:  m.configuration.DBConStr(),
+		DBConnStr:  m.configuration.DatabaseURL(),
 		Migrations: MigrationInfo{},
 	}
 
@@ -175,6 +195,7 @@ func (m DBMigrator) Info(stopAfter int32) (information Info, fault error) {
 	return i, nil
 }
 
+// Migrate migrates the database to the latest version.
 func (m *DBMigrator) Migrate() (fault error) {
 	m.migrator.OnStart = func(sequence int32, name string, direction string, sql string) {
 		if direction == "up" {
@@ -192,6 +213,7 @@ func (m *DBMigrator) Migrate() (fault error) {
 	return nil
 }
 
+// MigrateTo migrates the database to the specified sequence number.
 func (m *DBMigrator) MigrateTo(sequence int32) (fault error) {
 	m.migrator.OnStart = func(sequence int32, name string, direction string, _ string) {
 		// if direction == "up" {
@@ -210,6 +232,7 @@ func (m *DBMigrator) MigrateTo(sequence int32) (fault error) {
 	return nil
 }
 
+// RunMigrations runs the database migrations to the specified version.
 func RunMigrations(ctx context.Context, logger Logger, connParams Configurator, fs FilesystemProvider, stopAfter int32, printSummary bool) (fault error) {
 	m, err := NewMigrator(ctx, logger, connParams, fs)
 	if err != nil {
@@ -250,6 +273,7 @@ func RunMigrations(ctx context.Context, logger Logger, connParams Configurator, 
 	return nil
 }
 
+// Logger defines the logging interface used by the DBMigrator and allows go11y to be used to log messages.
 type Logger interface {
 	Debug(msg string, ephemeralArgs ...any)
 	Info(msg string, ephemeralArgs ...any)

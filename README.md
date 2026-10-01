@@ -38,7 +38,7 @@ _, o, _ := go11y.Initialise(ctx, nil, os.Stdout)
 
 ctx, span := otel.Tracer("packageName").Start(ctx, "functionName", trace.WithSpanKind(trace.SpanKindClient))
 
-o.Info("structured logging")
+o.Info("structured logging", span)
 ```
 
 ### Roundtrippers
@@ -67,6 +67,7 @@ o.Info("structured logging")
 ## Used by
 
 * [Kiss My Creative](https://kissmycreative.com)
+* [Swoop Telecommunications](https://swoop.com.au)
 
 ## Todo
 

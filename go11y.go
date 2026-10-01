@@ -4,56 +4,61 @@ package go11y
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
-	"github.com/jsnfwlr/go11y/db"
-	"github.com/jsnfwlr/go11y/etc/migrations"
-
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
-	"github.com/jackc/pgx/v5/pgxpool"
 	otelSDKTrace "go.opentelemetry.io/otel/sdk/trace"
 	otelTrace "go.opentelemetry.io/otel/trace"
 )
 
+// Fields represents a set of key-value pairs for logging.
 type Fields map[string]any
 
+// Observer is the main struct for observability, containing loggers, tracer providers, and database connections.
 type Observer struct {
 	cfg           Configurator
 	output        io.Writer
 	level         slog.Level
-	logger        *slog.Logger
+	outLogger     *slog.Logger
+	errLogger     *slog.Logger
 	traceProvider *otelSDKTrace.TracerProvider
 	tracer        otelTrace.Tracer
+	initialArgs   []any
 	stableArgs    []any
-	db            *ObserverDB
 	span          otelTrace.Span
 	spans         []otelTrace.Span
-}
-
-type ObserverDB struct {
-	conn    *pgx.Conn
-	pool    *pgxpool.Pool
-	queries *db.Queries
+	skipCallers   int
+	errOutput     io.Writer
+	logOutput     io.Writer
 }
 
 type go11yContextKey string
 
 var obsKeyInstance go11yContextKey = "jsnfwlr/go11y"
 
-var og *Observer
-
-func Initialise(ctx context.Context, cfg Configurator, logOutput io.Writer, initialArgs ...any) (ctxWithGo11y context.Context, observer *Observer, fault error) {
+// Initialise sets up the Observer with the provided configuration, log outputs, and initial arguments.
+func Initialise(
+	ctx context.Context,
+	cfg Configurator,
+	logOutput, errOutput io.Writer,
+	initialArgs ...any,
+) (
+	ctxWithGo11y context.Context,
+	observer *Observer,
+	fault error,
+) {
 	if logOutput == nil {
 		logOutput = os.Stdout
+	}
+
+	if errOutput == nil {
+		errOutput = os.Stderr
 	}
 
 	var err error
@@ -72,121 +77,147 @@ func Initialise(ctx context.Context, cfg Configurator, logOutput io.Writer, init
 
 	opts := defaultOptions(cfg)
 
-	og = &Observer{
+	o := &Observer{
 		cfg:           cfg,
 		output:        logOutput,
-		logger:        slog.New(slog.NewJSONHandler(logOutput, opts)),
+		outLogger:     slog.New(slog.NewJSONHandler(logOutput, opts)),
+		errLogger:     slog.New(slog.NewJSONHandler(errOutput, opts)),
+		logOutput:     logOutput,
+		errOutput:     errOutput,
 		traceProvider: tp,
 		stableArgs:    initialArgs,
+		initialArgs:   initialArgs,
+		skipCallers:   3, // default to 3 but allow it to be increased via o.IncreaseDistance()
 	}
 
-	dbConnStr := cfg.DBConStr()
-	if dbConnStr != "" {
-		odb := &ObserverDB{}
-
-		odb.conn, err = pgx.Connect(ctx, dbConnStr)
-		if err != nil {
-			return ctx, nil, fmt.Errorf("could not connect to postgres: %w", err)
-		}
-
-		odb.pool, err = pgxpool.New(ctx, dbConnStr)
-		if err != nil {
-			return ctx, nil, fmt.Errorf("could not create connection pool: %w", err)
-		}
-
-		odb.queries = db.New(odb.conn)
-
-		og.db = odb
-
-		col, err := migrations.New()
-		if err != nil {
-			return ctx, nil, fmt.Errorf("failed to read migrations: %w", err)
-		}
-
-		dbMig, err := db.NewMigrator(ctx, og, cfg, col)
-		if err != nil {
-			return ctx, nil, fmt.Errorf("could not create migrator: %w", err)
-		}
-		err = dbMig.Migrate()
-		if err != nil {
-			return ctx, nil, fmt.Errorf("could not migrate database: %w", err)
-		}
-		og.Debug("Database migrated successfully")
-	}
-
-	ctx = context.WithValue(ctx, obsKeyInstance, og)
+	ctx = context.WithValue(ctx, obsKeyInstance, o)
 	if len(initialArgs) != 0 {
-		ctx, og = Extend(ctx, initialArgs...)
+		ctx, o, err = Extend(ctx, initialArgs...)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to extend context with initial arguments: %w", err)
+		}
 	}
 
-	slog.SetDefault(og.logger)
+	slog.SetDefault(o.outLogger)
 
-	og.Develop("Initialised observer with context")
+	o.Debug("Initialised observer with context")
 
-	return ctx, og, nil
+	return ctx, o, nil
 }
 
-func Reset(ctxWithGo11y context.Context) (ctxWithResetObservability context.Context) {
-	og.logger = slog.New(slog.NewJSONHandler(og.output, defaultOptions(og.cfg)))
-	og.Debug("Observer reset")
-	og.stableArgs = []any{}
+// Reset resets the Observer in the context to its initial state.
+func Reset(originalObserver *Observer) (observer *Observer, fault error) {
+	if originalObserver == nil {
+		return nil, fmt.Errorf("observer cannot be nil")
+	}
 
-	return context.WithValue(ctxWithGo11y, obsKeyInstance, og)
+	newO := &Observer{
+		cfg:           originalObserver.cfg,
+		output:        originalObserver.output,
+		outLogger:     slog.New(slog.NewJSONHandler(originalObserver.logOutput, defaultOptions(originalObserver.cfg))),
+		errLogger:     slog.New(slog.NewJSONHandler(originalObserver.errOutput, defaultOptions(originalObserver.cfg))),
+		traceProvider: originalObserver.traceProvider,
+		skipCallers:   originalObserver.skipCallers,
+		stableArgs:    originalObserver.initialArgs,
+		initialArgs:   originalObserver.initialArgs,
+	}
+
+	return newO, nil
 }
 
 // Get retrieves the Observer from the context. If none exists, it initializes a new one with default settings.
-func Get(ctx context.Context) (ctxWithObserver context.Context, observer *Observer) {
+func Get(ctx context.Context) (ctxWithObserver context.Context, observer *Observer, fault error) {
 	ob := ctx.Value(obsKeyInstance)
 	if ob == nil {
-		return context.WithValue(ctx, obsKeyInstance, og), og
+		return ctx, nil, fmt.Errorf("go11y Observer not found in context - please initialise go11y first")
 	}
 
-	o := ob.(*Observer)
-
-	return ctx, o
+	if o, ok := ob.(*Observer); ok {
+		return ctx, o, nil
+	}
+	return ctx, nil, fmt.Errorf("go11y Observer not found in context - please initialise go11y first")
 }
 
 // Extend retrieves the Observer from the context and adds new arguments to its logger.
 // If no Observer exists in the context, it initializes a new one with default settings and adds the arguments.
-func Extend(ctx context.Context, newArgs ...any) (ctxWithGo11y context.Context, observer *Observer) {
-	ctx, o := Get(ctx)
+// LLMs will report that this function mutates the Observer in place, but this is intentional to allow for dynamic
+// updates to the logger's stable arguments.
+func Extend(ctx context.Context, newArgs ...any) (ctxWithGo11y context.Context, observer *Observer, fault error) {
+	ctx, o, err := Get(ctx)
+	if err != nil {
+		return ctx, nil, err
+	}
 
+	// add the newArgs to the existing stableArgs and update the loggers
 	if len(newArgs) != 0 {
-		o.logger = o.logger.With(newArgs...)
+		o.outLogger = o.outLogger.With(newArgs...)
+		o.errLogger = o.errLogger.With(newArgs...)
 		o.stableArgs = o.AddArgs(newArgs...)
 	}
 
-	return context.WithValue(ctx, obsKeyInstance, o), o
+	return context.WithValue(ctx, obsKeyInstance, o), o, nil
 }
 
 // Span gets the Observer from the context and starts a new tracing span with the given name.
 // If no Observer exists in the context, it initializes a new one with default settings and starts the span.
 // The tracing equivalent of Get()
-func Span(ctx context.Context, tracer otelTrace.Tracer, spanName string, spanKind otelTrace.SpanKind) (ctxWithSpan context.Context, observer *Observer) {
-	ctx, o := Get(ctx)
+func Span(
+	ctx context.Context,
+	tracer otelTrace.Tracer,
+	spanName string,
+	spanKind otelTrace.SpanKind,
+) (
+	ctxWithSpan context.Context,
+	observer *Observer,
+	fault error,
+) {
+	ctx, o, err := Get(ctx)
+	if err != nil {
+		return ctx, nil, err
+	}
 
 	ctx, span := tracer.Start(ctx, spanName, otelTrace.WithSpanKind(spanKind))
 
 	o.span = span
 	o.spans = append(o.spans, span)
 
-	return context.WithValue(ctx, obsKeyInstance, o), o
+	return context.WithValue(ctx, obsKeyInstance, o), o, nil
 }
 
-// Expand retrieves the Observer from the context, starts a new tracing span with the given name, and adds new arguments to its logger.
-// If no Observer exists in the context, it initializes a new one with default settings and adds the arguments.
-func Expand(ctx context.Context, tracer otelTrace.Tracer, spanName string, spanKind otelTrace.SpanKind, newArgs ...any) (ctxWithSpan context.Context, observer *Observer) {
-	ctx, o := Span(ctx, tracer, spanName, spanKind)
+// Expand retrieves the Observer from the context, starts a new tracing span with the given name, and adds new arguments
+// to its logger. If no Observer exists in the context, it initializes a new one with default settings and adds the
+// arguments.
+// This is effectively Extend() plus Span() in one function, and is useful for reducing boilerplate in handlers
+// and middlewares.
+// LLMs will report that this function mutates the Observer in place, but this is intentional to allow for dynamic
+// updates to the logger's stable arguments.
+func Expand(
+	ctx context.Context,
+	tracer otelTrace.Tracer,
+	spanName string,
+	spanKind otelTrace.SpanKind,
+	newArgs ...any,
+) (
+	ctxWithSpan context.Context,
+	observer *Observer,
+	fault error,
+) {
+	ctx, o, err := Span(ctx, tracer, spanName, spanKind)
+	if err != nil {
+		return ctx, nil, err
+	}
 
 	if len(newArgs) != 0 {
-		o.logger = o.logger.With(newArgs...)
+		o.outLogger = o.outLogger.With(newArgs...)
+		o.errLogger = o.errLogger.With(newArgs...)
 		o.stableArgs = o.AddArgs(newArgs...)
 	}
 
-	return context.WithValue(ctx, obsKeyInstance, o), o
+	return context.WithValue(ctx, obsKeyInstance, o), o, nil
 }
 
 // Close ends all active spans and shuts down the trace provider to ensure all traces are flushed.
+// This does not return any error, but logs an error if the trace provider fails to shut down properly.
 func (o *Observer) Close() {
 	if o.span != nil {
 		o.span.End()
@@ -195,10 +226,9 @@ func (o *Observer) Close() {
 			s.End()
 		}
 	}
-
 	if o.traceProvider != nil {
 		if err := o.traceProvider.Shutdown(context.Background()); err != nil {
-			o.Fatal("could not shut down tracer", err)
+			o.Error("could not shut down tracer", err, SeverityMedium)
 		}
 	}
 }
@@ -236,33 +266,18 @@ func defaultReplacer(trimModules, trimPaths []string) func(groups []string, a sl
 			if lvl, ok := a.Value.Any().(slog.Level); ok {
 				level = lvl
 			} else {
-				level = ParseLevel(fmt.Sprintf("%v", a.Value.Any()))
+				level = StringToLevel(fmt.Sprintf("%v", a.Value.Any()))
 			}
 
-			switch level {
-			case LevelDebug:
-				a.Value = slog.StringValue("DEBUG")
-			case LevelInfo:
-				a.Value = slog.StringValue("INFO")
-			case LevelNotice:
-				a.Value = slog.StringValue("NOTICE")
-			case LevelWarning:
-				a.Value = slog.StringValue("WARN")
-			case LevelError:
-				a.Value = slog.StringValue("ERR")
-			case LevelFatal:
-				a.Value = slog.StringValue("FATAL")
-			default:
-				a.Value = slog.StringValue("DEBUG")
-			}
+			a.Value = LevelToValue(level) // moved to a function to keep the translation alongside the level definitions
 		}
 
 		return a
 	}
 }
 
-func (o *Observer) log(ctx context.Context, skipCallers int, level slog.Level, msg string, args ...any) (logged bool) {
-	if o.logger == nil || !o.logger.Enabled(ctx, level) {
+func (o *Observer) log(skipCallers int, level slog.Level, msg string, args ...any) (levelEnabled bool) {
+	if o.outLogger == nil || !o.outLogger.Enabled(context.Background(), level) {
 		return false
 	}
 	var pc uintptr
@@ -274,117 +289,106 @@ func (o *Observer) log(ctx context.Context, skipCallers int, level slog.Level, m
 	r := slog.NewRecord(time.Now(), level, msg, pc)
 
 	if len(args) != 0 {
-		r.Add(args...)
+		r.Add(DeduplicateArgs(args)...)
 	}
 
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	_ = o.logger.Handler().Handle(ctx, r)
+	_ = o.outLogger.Handler().Handle(context.Background(), r)
 
 	return true
 }
 
-func (o *Observer) store(ctx context.Context, url, method string, statusCode int32, duration time.Duration, requestBody, responseBody []byte, requestHeaders, responseHeaders http.Header) (fault error) {
-	if o.db == nil {
-		o.Debug("Database is not enabled, skipping storage of API request")
-		return nil
+func (o *Observer) error(skipCallers int, level slog.Level, msg string, args ...any) (levelEnabled bool) {
+	if o.errLogger == nil || !o.errLogger.Enabled(context.Background(), level) {
+		return false
+	}
+	var pc uintptr
+	var pcs [1]uintptr
+	// skip [runtime.Callers, this function, this function's caller]
+	runtime.Callers(skipCallers, pcs[:])
+	pc = pcs[0]
+
+	r := slog.NewRecord(time.Now(), level, msg, pc)
+
+	if len(args) != 0 {
+		r.Add(DeduplicateArgs(args)...)
 	}
 
-	reqHead, err := json.Marshal(requestHeaders)
-	if err != nil {
-		o.Error("Failed to marshal request headers to JSON", err, SeverityMedium)
-		return err
-	}
+	_ = o.errLogger.Handler().Handle(context.Background(), r)
 
-	respHead, err := json.Marshal(responseHeaders)
-	if err != nil {
-		o.Error("Failed to marshal response headers to JSON", err, SeverityMedium)
-		return err
-	}
-
-	rqB := pgtype.Text{
-		String: string(requestBody),
-		Valid:  len(requestBody) > 0,
-	}
-
-	rsB := pgtype.Text{
-		String: string(responseBody),
-		Valid:  len(responseBody) > 0,
-	}
-
-	// Create a new entry in the database
-	entry := db.StoreAPIRequestParams{
-		Url:             url,
-		Method:          method,
-		StatusCode:      statusCode,
-		RequestBody:     rqB,
-		RequestHeaders:  reqHead,
-		ResponseBody:    rsB,
-		ResponseHeaders: respHead,
-		ResponseTimeMs:  int64(duration),
-	}
-
-	// Store the entry in the database
-	if err := o.db.queries.StoreAPIRequest(ctx, entry); err != nil {
-		o.Error("Failed to store entry in database", err, SeverityMedium)
-		return err
-	}
-
-	return nil
+	return true
 }
 
-func (o *Observer) CheckStore() (record db.RemoteApiRequest, fault error) {
-	if o.db == nil {
-		return db.RemoteApiRequest{}, nil
-	}
-
-	record, err := o.db.queries.GetAPIRequests(context.Background())
-	if err != nil {
-		return db.RemoteApiRequest{}, fmt.Errorf("failed to get last remote API request: %w", err)
-	}
-
-	return record, nil
-}
-
-// AddArgs processes the provided arguments, ensuring that they are stable and formatted correctly.
+// AddArgs processes the provided arguments, ensuring that they are stable, unique, ordered, and formatted correctly.
 func (o *Observer) AddArgs(args ...any) (filteredArgs []any) {
 	args = append(o.stableArgs, args...)
 
 	exArgs := map[any]any{}
 
-	for len(args) > 0 {
-		exArgs, args = processArgs(exArgs, args)
+	// Deduplicate the arguments
+	for len(args) > 1 {
+		exArgs[args[0]] = args[1]
+		args = args[2:]
 	}
 
-	resArgs := make([]any, 0, len(exArgs)/2)
-	for k, v := range exArgs {
-		resArgs = append(resArgs, k, v)
+	keys := make([]string, 0, len(exArgs))
+	for k := range exArgs {
+		keys = append(keys, fmt.Sprintf("%v", k))
+	}
+
+	// Sort the keys to maintain a consistent order
+	slices.Sort(keys)
+
+	resArgs := make([]any, 0, len(exArgs)*2)
+	for _, k := range keys {
+		resArgs = append(resArgs, k, exArgs[k])
 	}
 
 	return resArgs
 }
 
-func processArgs(exArgs map[any]any, args []any) (map[any]any, []any) {
-	if len(args) < 2 {
-		return exArgs, []any{}
-	}
-
-	exArgs[args[0]] = args[1]
-
-	return exArgs, args[2:]
-}
-
-func (o *Observer) Mute(ctx context.Context) {
-}
-
+// End ends the current tracing span and reverts to the previous span in the stack.
 func (o *Observer) End() {
-	o.span.End()
-
-	o.spans = o.spans[:len(o.spans)-1]
-	if len(o.spans) > 0 {
-		o.span = o.spans[len(o.spans)-1]
-	} else {
-		o.span = nil
+	if o.span != nil {
+		o.span.End()
 	}
+
+	if len(o.spans) > 0 {
+		o.spans = o.spans[:len(o.spans)-1]
+		if len(o.spans) > 0 {
+			o.span = o.spans[len(o.spans)-1]
+		} else {
+			o.span = nil
+		}
+	}
+}
+
+// InContext can be used to check if go11y has been added to a context before calling go11y.Get()
+// This is useful for other packages imported by services that use go11y as well as other services that still use the
+// go-logging package.
+func InContext(ctx context.Context) (response bool) {
+	return (ctx.Value(obsKeyInstance) != nil)
+}
+
+// IncreaseDistance increases the caller skip distance for logging purposes.
+// This is useful when wrapping go11y (such as the go-common splitLog)
+func (o *Observer) IncreaseDistance(distance int) {
+	o.skipCallers += distance
+}
+
+// DecreaseDistance decreases the caller skip distance for logging purposes.
+// This is useful when wrapping go11y (such as the go-common splitLog)
+func (o *Observer) DecreaseDistance(distance int) {
+	o.skipCallers -= distance
+}
+
+// SetDistance sets the caller skip distance for logging purposes.
+// This is useful when wrapping go11y (such as the go-common splitLog)
+func (o *Observer) SetDistance(distance int) {
+	o.skipCallers = distance
+}
+
+// AddToContext adds the Observer to the provided context.
+// This is useful for reducing boilerplate in handlers and middlewares.
+func AddToContext(ctx context.Context, o *Observer) context.Context {
+	return context.WithValue(ctx, obsKeyInstance, o)
 }

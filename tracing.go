@@ -17,12 +17,15 @@ import (
 	otelTrace "go.opentelemetry.io/otel/trace"
 )
 
+// Tracer gets a Tracer with the given name and options using the Observer's tracer provider.
 func (o *Observer) Tracer(name string, opts ...otelTrace.TracerOption) otelTrace.Tracer {
 	return o.traceProvider.Tracer(name, opts...)
 }
 
 func tracerProvider(ctx context.Context, cfg Configurator) (tracerProvider *otelSDKTrace.TracerProvider, fault error) {
-	if cfg == nil || cfg.URL() == "" {
+	if cfg.OtelURL() == "" {
+		// Skip-tracer Randy: if no OTEL URL is provided, we assume the user does not want to set up tracing and we
+		// return nil for the tracer provider
 		return nil, nil
 	}
 
@@ -31,12 +34,12 @@ func tracerProvider(ctx context.Context, cfg Configurator) (tracerProvider *otel
 	}
 
 	options := []otelExportTraceHTTP.Option{
-		otelExportTraceHTTP.WithEndpointURL(cfg.URL()),
+		otelExportTraceHTTP.WithEndpointURL(cfg.OtelURL()),
 		otelExportTraceHTTP.WithCompression(otelExportTraceHTTP.GzipCompression),
 		otelExportTraceHTTP.WithHeaders(headers),
 	}
 
-	if !strings.HasPrefix(cfg.URL(), "https://") {
+	if !strings.HasPrefix(cfg.OtelURL(), "https://") {
 		options = append(options, otelExportTraceHTTP.WithInsecure())
 	}
 
@@ -47,10 +50,9 @@ func tracerProvider(ctx context.Context, cfg Configurator) (tracerProvider *otel
 		return nil, fmt.Errorf("failed to create exporter: %w", err)
 	}
 
-	randy := otelSDKTrace.NewTracerProvider(
+	tp := otelSDKTrace.NewTracerProvider(
 		otelSDKTrace.WithBatcher(
 			exporter,
-			otelSDKTrace.WithMaxExportBatchSize(otelSDKTrace.DefaultMaxExportBatchSize),
 			otelSDKTrace.WithBatchTimeout(otelSDKTrace.DefaultScheduleDelay*time.Millisecond),
 			otelSDKTrace.WithMaxExportBatchSize(otelSDKTrace.DefaultMaxExportBatchSize),
 		),
@@ -62,9 +64,9 @@ func tracerProvider(ctx context.Context, cfg Configurator) (tracerProvider *otel
 		),
 	)
 
-	otel.SetTracerProvider(randy)
+	otel.SetTracerProvider(tp)
 
-	return randy, nil
+	return tp, nil
 }
 
 func argsToAttributes(combinedArgs ...any) []otelAttribute.KeyValue {
@@ -119,19 +121,27 @@ func argsToAttributes(combinedArgs ...any) []otelAttribute.KeyValue {
 	return attrs
 }
 
-const (
-	SpanKindServer   = otelTrace.SpanKindServer
-	SpanKindClient   = otelTrace.SpanKindClient
-	SpanKindProducer = otelTrace.SpanKindProducer
-	SpanKindConsumer = otelTrace.SpanKindConsumer
-	SpanKindInternal = otelTrace.SpanKindInternal
-)
+// SpanKindInternal is a constant that aliases otelTrace.SpanKindInternal
+const SpanKindInternal = otelTrace.SpanKindInternal
+
+// SpanKindServer is a constant that aliases otelTrace.SpanKindServer
+const SpanKindServer = otelTrace.SpanKindServer
+
+// SpanKindClient is a constant that aliases otelTrace.SpanKindClient
+const SpanKindClient = otelTrace.SpanKindClient
+
+// SpanKindProducer is a constant that aliases otelTrace.SpanKindProducer
+const SpanKindProducer = otelTrace.SpanKindProducer
+
+// SpanKindConsumer is a constant that aliases otelTrace.SpanKindConsumer
+const SpanKindConsumer = otelTrace.SpanKindConsumer
 
 type (
-	Tracer       otelTrace.Tracer
-	TracerOption otelTrace.TracerOption
+	Tracer       otelTrace.Tracer       // Tracer is an alias for otelTrace.Tracer
+	TracerOption otelTrace.TracerOption // TracerOption is an alias for otelTrace.TracerOption
 )
 
+// NewTracer creates a new Tracer with the given package address and options.
 func NewTracer(packageAddress string, options ...TracerOption) Tracer {
 	otelOpts := make([]otelTrace.TracerOption, len(options))
 	for i, opt := range options {
